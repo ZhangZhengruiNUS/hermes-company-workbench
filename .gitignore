@@ -14,8 +14,8 @@ projects.db*
 
 # --- local config & private assets ---
 v5_data.json
-assets/avatars/*.png
-!assets/avatars/.gitkeep
+# 占位头像(脚本生成, 无真人照片)入库; 若放真实定制头像请自行排除
+!assets/avatars/*.png
 
 # --- python ---
 __pycache__/
