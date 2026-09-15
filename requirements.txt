@@ -1,0 +1,3 @@
+# 运行时依赖 (Python 3.9+)
+# 仅一项第三方依赖; 其余全部为标准库 (http.server / sqlite3 / hashlib / secrets 等)
+PyYAML>=6.0

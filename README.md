@@ -18,7 +18,7 @@
 
 | 层 | 技术 |
 |---|---|
-| 后端 | Python 3 标准库（`http.server.ThreadingHTTPServer` + sqlite3），无第三方运行时依赖 |
+| 后端 | Python 3.9+ 标准库（`http.server.ThreadingHTTPServer` + sqlite3），第三方依赖仅 PyYAML（见 requirements.txt） |
 | 前端 | 单文件原生 HTML/CSS/JS（无框架、无构建链），`build.py` 仅做拼装与占位断言 |
 | 实时 | SSE（后端单巡检线程 1.5s 扫 `task_events`，集中广播） |
 | 反代 | nginx（SSE 路径需关缓冲，见 `deploy/nginx.conf.example`） |
@@ -34,10 +34,16 @@
 
 ## 安装启动
 
-依赖：Python 3.9+（仅标准库）、nginx（可选，用于公网/多端访问）。
+依赖：Python 3.9+、PyYAML（`pip install -r requirements.txt`）、nginx（可选，用于公网/多端访问）。
 
 ```bash
-# 1. 构建前端单文件
+# 0. 建议使用独立虚拟环境
+python3 -m venv .venv && source .venv/bin/activate
+
+# 1. 安装依赖
+pip install -r requirements.txt
+
+# 2. 构建前端单文件
 python3 build.py                       # 产物 kanban.html
 
 # 2. 配置（可选, 全部有默认值）
@@ -74,8 +80,8 @@ python3 deploy/preview_server.py       # http://127.0.0.1:8902/kanban.html
 
 - 任务/项目数据**只读**：变更需通过 Hermes 官方 CLI（`hermes kanban …`），页面实时跟随但不提供反向写
 - `projects.db` 若为空，项目页如实显示"暂无项目"；不自动虚构关联
-- 无认证的多用户/公网暴露需自行在 nginx 层加访问控制；写操作自带密码锁+审计
-- 员工头像未随仓库分发（`assets/avatars/` 为占位目录），部署时自备
+- **访问边界（重要）**：写密码锁**只保护写操作**（SOUL 保存/skill 启停）。任务、事件、Profile 读取接口与 SSE 均为**无应用层鉴权的只读端点**——它们暴露的是看板数据与员工配置（已脱敏），公网部署必须在反代层（nginx basic auth / IP 白名单 / VPN）加访问控制并启用 HTTPS，否则任何人可读取。生产环境请勿裸暴露
+- 员工头像未随仓库分发（`assets/avatars/` 内为生成的通用占位图），部署时可自备
 - 单机单实例设计，未做水平扩展
 
 ## License
