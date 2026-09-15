@@ -1,0 +1,38 @@
+# --- secrets / environment ---
+.env
+*.token
+*_token*
+credentials*
+
+# --- runtime data / databases ---
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
+kanban.db*
+projects.db*
+
+# --- local config & private assets ---
+v5_data.json
+assets/avatars/*.png
+!assets/avatars/.gitkeep
+
+# --- python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- build output ---
+kanban.html
+
+# --- os / editor ---
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# --- logs / temp ---
+*.log
+/tmp/
