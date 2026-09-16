@@ -573,7 +573,8 @@ function pad(n){return n<10?"0"+n:""+n;}
 function fmtTs(ts){if(!ts)return"—";var d=new Date(ts*1000);return pad(d.getMonth()+1)+"-"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes());}
 function fmtDay(ts){if(!ts)return"—";var d=new Date(ts*1000);return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
 function avatarHtml(name){
-  var a=(name||"?")[0].toUpperCase();var h=0;for(var i=0;i<(name||"x").length;i++)h=(h*31+name.charCodeAt(i))%360;
+  name=name||"?";
+  var a=name[0].toUpperCase();var h=0;for(var i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))%360;
   if(AVATARS[name]){
     return '<span class="avatar av-img"><img src="avatars/'+AVATARS[name]+'" alt="'+esc(CN[name]||name)+'头像" loading="lazy"></span>';
   }
