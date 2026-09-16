@@ -408,7 +408,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
 <div class="noise" aria-hidden="true"></div>
 <div class="app">
   <nav class="sidebar" aria-label="主导航">
-    <div class="brand"><div class="logo"><img id="brandLogo" src="logos/logo-light.png" alt="Hermes Company Logo" onerror="this.remove();this.parentElement.textContent='HC'"></div><div><b>Hermes Company</b><small>AI 团队工作台</small></div></div>
+    <div class="brand"><div class="logo"><img id="brandLogo" src="logos/logo-light.png" alt="Hermes Company Logo" onerror="var p=this.parentElement;this.remove();if(p)p.textContent='HC'"></div><div><b>Hermes Company</b><small>AI 团队工作台</small></div></div>
     <button class="nav-item" data-view="overview"><span class="ico">◎</span>总览</button>
     <button class="nav-item" data-view="tasks"><span class="ico">☰</span>任务<span class="cnt" id="nTasks"></span></button>
     <button class="nav-item" data-view="team"><span class="ico">◫</span>团队<span class="cnt" id="nTeam"></span></button>
@@ -419,7 +419,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
 
   <div class="main">
     <header class="topbar">
-      <span class="brand-m"><img id="brandLogoM" src="logos/logo-light.png" alt="Logo"></span>
+      <span class="brand-m"><img id="brandLogoM" src="logos/logo-light.png" alt="Logo" onerror="this.remove()"></span>
       <h2 id="viewTitle">总览</h2>
       <span class="snap-chip" id="snapChip" title=""><span class="sp-dot" id="liveDot"></span><span id="snapLabel">快照</span> · <span class="mono" id="snapTime"></span></span>
       <div class="spacer"></div>
@@ -519,7 +519,7 @@ window.KANBAN_DATA = null;
 "use strict";
 /* ---------- runtime store ---------- */
 var D = {tasks:[], projects:[], profiles:[], snapshot_at:null};
-var STATE = {mode:"offline", lastOk:0, cursor:0, es:null, pollTimer:null, visibility:true};
+var STATE = {mode:"offline", lastOk:0, cursor:0, evCursor:0, es:null, esReady:false, pollTimer:null, visibility:true};
 window.WB_DEBUG = {STATE:STATE, LIVE:null}; // 调试/验收用, 不含敏感数据
 var VIEWS = {overview:"总览",tasks:"任务",team:"团队",projects:"项目",activity:"活动"};
 var ST = [
@@ -656,7 +656,10 @@ var LIVE = {
   applyBoard:function(data){
     if(!data)return false;
     D.tasks=data.tasks||[];
-    D.projects=data.projects||[];  // 真实项目实体 (projects.db)
+    D.projects=data.projects||[];
+    D.projectsOk=data.projects_ok!==false;   // 数据源状态与 SSE 连接状态分开
+    D.projectsError=data.projects_error||"";
+    // events_cursor 是"数据库最新水位", 不是前端已消费位置; 已消费游标(STATE.evCursor)不在此推进
     STATE.cursor=data.events_cursor||STATE.cursor;
     STATE.lastOk=data.fetched_at||Math.floor(Date.now()/1000);
     D.snapshot_at="live";
@@ -675,14 +678,22 @@ var LIVE = {
       return r.json.data;
     });
   },
-  // SSE 通知到达 → 补取事件 → 重拉 board(任务/统计/游标同源)
+  // SSE 通知到达 → 按已消费游标补取事件 → 重拉 board(任务/统计同源)
   onNotify:function(msg){
     if(msg.type==="profiles_changed"){loadProfilesMeta();return;}
     if(msg.type==="source_error"){this.set("reconnect");return;}
-    // events 通知: 先补取活动, 再重拉 board
+    if(msg.type==="resync"){ // 订阅队列溢出: 显式重新同步, 不静默
+      var rs=this;
+      rs.fetchEventsCatchup(STATE.evCursor).then(function(ed){
+        if(ed&&ed.events&&ed.events.length){STATE.evCursor=ed.cursor;prependActivities(ed.events);}
+        return rs.fetchBoard();
+      });
+      return;
+    }
+    // events 通知: 先补取活动(从已消费游标起, 不漏), 再重拉 board
     var self=this;
-    self.fetchEventsCatchup(STATE.cursor).then(function(ed){
-      if(ed&&ed.events&&ed.events.length){STATE.cursor=ed.cursor;prependActivities(ed.events);}
+    self.fetchEventsCatchup(STATE.evCursor).then(function(ed){
+      if(ed&&ed.events&&ed.events.length){STATE.evCursor=ed.cursor;prependActivities(ed.events);}
       return self.fetchBoard();
     }).then(function(ok){if(ok)self.set("live");});
   },
@@ -690,13 +701,33 @@ var LIVE = {
     var self=this;
     try{
       var es=new EventSource("/api/v1/stream");
-      STATE.es=es;
-      es.onopen=function(){ if(STATE.mode!=="live"){self.fetchBoard().then(function(ok){if(ok)self.set("live");});} else self.set("live"); };
+      STATE.es=es;STATE.esReady=false;   // OPEN 之前不算健康连接
+      es.onopen=function(){
+        STATE.esReady=true;
+        // 重连成功: 用已消费游标补齐断线期间事件, 再重拉 board
+        self.fetchEventsCatchup(STATE.evCursor).then(function(ed){
+          if(ed&&ed.events&&ed.events.length){STATE.evCursor=ed.cursor;prependActivities(ed.events);}
+          return self.fetchBoard();
+        }).then(function(ok){if(ok)self.set("live");});
+      };
       es.onmessage=function(e){
-        try{var msg=JSON.parse(e.data);if(msg.type!=="hello")self.onNotify(msg);}catch(err){}
+        try{
+          var msg=JSON.parse(e.data);
+          if(msg.type==="hello"){
+            // 服务端水位领先已消费游标 → 断线期间有新事件, 立即补取(不漏不重)
+            var wc=msg.cursor||0;
+            if(wc>STATE.evCursor){
+              self.fetchEventsCatchup(STATE.evCursor).then(function(ed){
+                if(ed&&ed.events&&ed.events.length){STATE.evCursor=ed.cursor;prependActivities(ed.events);}
+              });
+            }
+            return;
+          }
+          self.onNotify(msg);
+        }catch(err){}
       };
       es.onerror=function(){
-        es.close();STATE.es=null;
+        es.close();STATE.es=null;STATE.esReady=false;
         self.set("reconnect");
         setTimeout(function(){self.startSSE();},3000);
         self.startPolling(); // 重连期间保持轮询兜底
@@ -708,12 +739,13 @@ var LIVE = {
     var self=this;
     STATE.pollTimer=setInterval(function(){
       if(!STATE.visibility)return;              // 标签页隐藏时降频(暂停, 回前台立即同步)
-      if(STATE.es)return;                        // SSE 恢复后停止轮询
+      // SSE 已 OPEN 且本轮仍健康时跳过; CONNECTING/重连中不停轮询兜底
+      if(STATE.es&&STATE.esReady&&STATE.es.readyState===1)return;
       self.fetchBoard().then(function(ok){
-        if(ok){self.set(STATE.es?"live":"poll");}
+        if(ok){self.set(STATE.esReady?"live":"poll");}
       });
     },10000);
-    this.set(STATE.es?STATE.mode:"poll");
+    this.set(STATE.esReady?STATE.mode:"poll");
   }
 };
 function loadProfilesMeta(){
@@ -756,17 +788,21 @@ LIVE.set("reconnect");
 Promise.all([
   fetchJSON("/api/v1/profiles"),
   fetchJSON("/api/v1/board"),
-  fetchJSON("/api/v1/events")
+  fetchJSON("/api/v1/events?after=0&order=desc")
 ]).then(function(rs){
   var okP=rs[0].json&&rs[0].json.ok, okB=rs[1].json&&rs[1].json.ok;
   if(okP)D.profiles=rs[0].json.data;
   if(rs[2].json&&rs[2].json.ok&&rs[2].json.data.events){
-    ACT_EVENTS=rs[2].json.data.events;  // 项目卡"最近活动"与活动页共用
+    // 启动首页按最新优先(倒序); 已消费游标 = 本页最大事件 id(完整消费过)
+    var evs=rs[2].json.data.events.slice().sort(function(a,b){return b.id-a.id;});
+    ACT_EVENTS=evs;  // 项目卡"最近活动"与活动页共用
+    STATE.evCursor=evs.length?evs[0].id:0;
   }
   if(okB){
     var d=rs[1].json.data;
     D.tasks=d.tasks;D.projects=d.projects||[];
-    STATE.cursor=d.events_cursor;
+    D.projectsOk=d.projects_ok!==false;D.projectsError=d.projects_error||"";
+    STATE.cursor=d.events_cursor;   // 数据库最新水位
     STATE.lastOk=d.fetched_at;D.snapshot_at="live";
     reindex();
     bootRender();
@@ -884,8 +920,10 @@ window.addEventListener("hashchange",function(){showView(location.hash.slice(1))
 /* ---------- drawer ---------- */
 var drawer=document.getElementById("drawer"),mask=document.getElementById("mask");
 var lastFocus=null;
+var detailSeq=0;  // 详情请求竞态保护: 只接受最新一次打开的响应
 function openDetail(id){
   var t=taskById[id];if(!t)return;
+  var seq=++detailSeq;
   lastFocus=document.activeElement;
   var p=t.project_id?projById[t.project_id]:null;
   var html="";
@@ -895,22 +933,47 @@ function openDetail(id){
   else html+='<div class="d-field"><div class="k">所属项目</div><div class="v" style="color:var(--text-3)">独立任务(未挂项目)</div></div>';
   html+='<div class="d-field"><div class="k">创建时间</div><div class="v">'+fmtTs(t.created_at)+'</div></div>';
   if(t.completed_at)html+='<div class="d-field"><div class="k">完成时间</div><div class="v">'+fmtTs(t.completed_at)+'</div></div>';
-  if(t.result)html+='<div class="d-field"><div class="k">执行记录</div><div class="v">'+esc(t.result)+'</div></div>';
+  // board 只有 result_preview; 正文/结果/运行记录以详情 API 为准, 占位符先渲染
+  if(t.result_preview)html+='<div class="d-field"><div class="k">结果摘要</div><div class="v">'+esc(t.result_preview)+'…</div></div>';
+  html+='<div id="detailRich"><div class="d-field"><div class="k">任务要求</div><div class="v" style="color:var(--text-3)">加载中…</div></div></div>';
   html+='<div id="depHolder"></div>';
   html+='<details class="d-tech"><summary>技术信息</summary><div class="tv">'+
     '任务 ID: <span class="mono">'+esc(t.id)+'</span><br>'+
     (p?'项目 ID: <span class="mono">'+esc(p.id)+'</span><br>':'')+
     (p&&p.created_at?'项目创建: <span class="mono">'+esc(p.created_at)+'</span><br>':'')+
-    (t.model?'模型: <span class="mono">'+esc(t.model)+'</span>':'')+
     '</div></details>';
   document.getElementById("dTitle").textContent=t.title;
   document.getElementById("dBody").innerHTML=html;
   drawer.classList.add("open");mask.classList.add("open");
   document.getElementById("dClose").focus();
-  // 依赖链按需获取(task_links: 上游依赖/后续任务)
+  // 详情完整数据(body/result/runs/events/依赖链)按需获取
   fetch("/api/v1/tasks/"+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(j){
+    if(seq!==detailSeq)return;  // 迟到的旧响应不得覆盖新打开的详情
     if(!j.ok)return;
-    var d=j.data,dep="";
+    var d=j.data,rich="";
+    if(d.body)rich+='<div class="d-field"><div class="k">任务要求</div><div class="v">'+esc(d.body)+'</div></div>';
+    else rich+='<div class="d-field"><div class="k">任务要求</div><div class="v" style="color:var(--text-3)">暂无描述</div></div>';
+    if(d.result)rich+='<div class="d-field"><div class="k">最终结果</div><div class="v">'+esc(d.result)+'</div></div>';
+    else if(d.status!=="done"&&d.status!=="archived")rich+='<div class="d-field"><div class="k">最终结果</div><div class="v" style="color:var(--text-3)">暂无结果(任务未完成)</div></div>';
+    if((d.runs||[]).length){
+      rich+='<div class="d-field"><div class="k">执行记录</div><div class="v">'+
+        d.runs.map(function(x){
+          return '<div style="padding:3px 0;border-bottom:1px solid var(--glass-border)">'+
+            esc((CN[x.profile]||x.profile||"?"))+' · '+esc(x.status||"?")+
+            (x.started_at?' · '+fmtTs(x.started_at):'')+
+            (x.summary?'<div style="color:var(--text-3);font-size:12px">'+esc(x.summary.slice(0,120))+'</div>':'')+
+            '</div>';
+        }).join("")+'</div></div>';
+    }
+    if((d.events||[]).length){
+      rich+='<div class="d-field"><div class="k">事件(最近 '+d.events.length+' 条)</div><div class="v">'+
+        d.events.map(function(x){
+          return '<div style="padding:2px 0;color:var(--text-2)"><span class="tag">'+esc(x.kind)+'</span> '+fmtTs(x.created_at)+'</div>';
+        }).join("")+'</div></div>';
+    }
+    var holder=document.getElementById("detailRich");
+    if(holder)holder.innerHTML=rich;
+    var dep="";
     function chainRow(x,mark){
       return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0">'+
         '<span style="color:var(--text-3)">'+mark+'</span>'+
@@ -922,12 +985,16 @@ function openDetail(id){
     if((d.downstream||[]).length)dep+='<div class="d-field"><div class="k">后续任务(依赖本任务)</div><div class="v">'+
       d.downstream.map(function(x){return chainRow(x,"↓");}).join("")+'</div></div>';
     if(!dep)dep='<div class="d-field"><div class="k">依赖链</div><div class="v" style="color:var(--text-3)">无上游/后续依赖</div></div>';
-    var holder=document.getElementById("depHolder");
-    if(holder){holder.innerHTML=dep;
-      holder.querySelectorAll(".dep-link").forEach(function(b){
+    var dholder=document.getElementById("depHolder");
+    if(dholder){dholder.innerHTML=dep;
+      dholder.querySelectorAll(".dep-link").forEach(function(b){
         b.addEventListener("click",function(){openDetail(b.getAttribute("data-id"));});
       });}
-  }).catch(function(){});
+  }).catch(function(){
+    if(seq!==detailSeq)return;
+    var holder=document.getElementById("detailRich");
+    if(holder)holder.innerHTML='<div class="d-field"><div class="k">任务要求</div><div class="v" style="color:var(--st-blocked)">详情加载失败</div></div>';
+  });
 }
 function closeDetail(){
   drawer.classList.remove("open");mask.classList.remove("open");
@@ -1063,7 +1130,7 @@ function renderOverview(){
   var cur=D.tasks.filter(function(t){return t.status==="running"||t.status==="blocked"||t.status==="ready";});
   var curEl=document.getElementById("ovCurrent");
   if(cur.length===0){
-    curEl.innerHTML='<div class="empty-state"><span class="eico">☕</span><b>当前没有进行中的任务</b>团队处于空闲状态，可以派新活了。</div>';
+    curEl.innerHTML='<div class="empty-state"><span class="eico">☕</span><b>Kanban 暂无执行中任务</b>未发现 running/blocked/ready 状态的任务，可以派新活了。</div>';
   }else{
     curEl.innerHTML=cur.map(function(t){
       var p=t.project_id?projById[t.project_id]:null;
@@ -1074,9 +1141,11 @@ function renderOverview(){
     curEl.querySelectorAll(".now-card").forEach(function(el){el.addEventListener("click",function(){openDetail(el.getAttribute("data-id"));});});
   }
 
-  // projects mini (统一 projStats 口径)
+  // projects mini (统一 projStats 口径; 数据源故障如实提示)
   var pj=document.getElementById("ovProjects");
-  pj.innerHTML=(D.projects||[]).map(function(p){
+  if(D.projectsOk===false){
+    pj.innerHTML='<div class="proj-mini"><div class="name" style="color:var(--st-blocked)">⚠ 项目数据源不可用</div><div class="meta">'+esc(D.projectsError||"")+'</div></div>';
+  }else pj.innerHTML=(D.projects||[]).map(function(p){
     var s=projStats(p.id);
     if(!s.total)return '<div class="proj-mini"><div class="name">'+esc(p.name)+'</div><div class="meta" style="color:var(--text-3)">暂无任务</div></div>';
     var pct=s.rate==null?0:s.rate;
@@ -1092,20 +1161,22 @@ function renderOverview(){
   var attEl=document.getElementById("ovAttention");
   attEl.innerHTML=att.length?
     att.map(function(t){return '<div class="wl-card" style="color:var(--st-blocked)">'+badge(t.status)+'<span class="n" style="color:var(--text)">'+esc(t.title.slice(0,34))+'</span></div>';}).join(""):
-    '<div class="empty-state" style="padding:20px"><span class="eico">✓</span><b>暂无阻塞事项</b>一切正常运转。</div>';
+    '<div class="empty-state" style="padding:20px"><span class="eico">✓</span><b>未发现 Kanban 阻塞任务</b></div>';
 
-  // workload: 头像+姓名+岗位+统计+微型进度条
+  // workload: 头像+姓名+岗位+统计+微型进度条 (按真实状态: running=执行中, done=完成, 不把 todo/archived 算完成)
   var totalDone=D.tasks.filter(function(t){return t.status==="done"||t.status==="archived";}).length||1;
   var wl=Object.keys(byAssign).sort(function(a,b){return byAssign[b]-byAssign[a];}).map(function(a){
-    var open=D.tasks.filter(function(t){return t.assignee===a&&(t.status==="running"||t.status==="ready"||t.status==="blocked");}).length;
-    var fin=byAssign[a]-open;
+    var mine=D.tasks.filter(function(t){return t.assignee===a;});
+    var open=mine.filter(function(t){return t.status==="running";}).length;
+    var readyN=mine.filter(function(t){return t.status==="ready"||t.status==="blocked";}).length;
+    var fin=mine.filter(function(t){return t.status==="done";}).length;
     var prof=D.profiles.filter(function(x){return x.name===a;})[0];
-    var statTxt=open>0?(""+open+" 项进行中 · "+fin+" 项完成"):(""+fin+" 项完成");
+    var statTxt=(open>0?open+" 项执行中 · ":"")+(readyN>0?readyN+" 项待处理 · ":"")+fin+" 项完成";
     var pct=Math.min(100,Math.round(byAssign[a]/totalDone*100));
     return '<div class="wl-card">'+avatarHtml(a)+
       '<span class="meta"><span class="n">'+esc(CN[a]||a)+'</span><span class="role">'+esc((prof&&prof.line)||"")+'</span></span>'+
       '<span class="mini-bar"><i style="width:'+pct+'%"></i></span>'+
-      '<span class="c">'+statTxt+'</span></div>';
+      '<span class="c">'+esc(statTxt)+'</span></div>';
   }).join("");
   document.getElementById("ovWorkload").innerHTML=wl;
 
@@ -1130,9 +1201,11 @@ function renderTeam(){
     ps.forEach(function(p){
       var h=0;for(var hi=0;hi<p.name.length;hi++)h=(h*31+p.name.charCodeAt(hi))%360;
       var mine=D.tasks.filter(function(t){return t.assignee===p.name;});
-      var open=mine.filter(function(t){return t.status==="running"||t.status==="ready"||t.status==="blocked";});
-      var latest=mine.slice().sort(function(a,b){return(b.completed_at||b.created_at||0)-(a.completed_at||a.created_at||0);})[0];
-      var cur=open[0]||latest;
+      // 真实状态语义: running=执行中, done=完成; todo/ready/blocked/archived 不混算
+      var open=mine.filter(function(t){return t.status==="running";}).length;
+      var fin=mine.filter(function(t){return t.status==="done";}).length;
+      var cur=mine.filter(function(t){return t.status==="running";})[0]||
+             mine.slice().sort(function(a,b){return(b.completed_at||b.created_at||0)-(a.completed_at||a.created_at||0);})[0];
       var img=AVATARS[p.name];
       var imgHtml=img
         ? '<span class="mimg"><img src="avatars/'+esc(img)+'" alt="'+esc(p.cn||p.name)+'头像" loading="lazy"></span>'
@@ -1141,7 +1214,7 @@ function renderTeam(){
         '<div class="mt">'+imgHtml+
         '<span class="mname"><span class="cn">'+esc(p.cn||p.name)+'</span><span class="en">'+esc(p.name)+'</span></span></div>'+
         '<div class="cur">'+(cur?esc(cur.title.slice(0,44))+(cur.title.length>44?"…":""):"暂无任务记录")+'</div>'+
-        '<div class="mfoot"><span class="mn">'+(open.length>0?(open.length+" 项进行中 · "):"")+(mine.length-open.length)+' 项完成</span>'+
+        '<div class="mfoot"><span class="mn">'+(open>0?(open+" 项执行中 · "):"")+fin+' 项完成</span>'+
         '<span class="chip">'+esc(p.model)+'</span></div></button>';
     });
     html+='</div>';
@@ -1164,7 +1237,7 @@ function openMember(name){
   currentMember=name;
   if(!wbCache[name])wbCache[name]={};
   var mine=D.tasks.filter(function(t){return t.assignee===name;});
-  var open=mine.filter(function(t){return t.status==="running"||t.status==="ready"||t.status==="blocked";});
+  var open=mine.filter(function(t){return t.status==="running";}).length;
   var html='<div class="wb-tabs" id="wbTabs">'+
     '<button class="wb-tab active" data-tab="soul">SOUL</button>'+
     '<button class="wb-tab" data-tab="skills">Skills</button>'+
@@ -1266,10 +1339,27 @@ function editSoul(name,soul){
     fetchJSON("/api/v1/profiles/"+name+"/soul",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({content:content,base_sha256:soul.sha256||""})}).then(function(res){
       if(res.status===423){WRITE_UNLOCKED=false;wbLockUI();alert("工作台已回到只读模式, 请点顶栏 🔒 解锁后再保存。");return;}
-      if(res.status===409){alert("冲突: "+(res.json.error||"文件已被其他修改更新")+"\n请关闭抽屉重新打开获取最新版本。");return;}
+      if(res.status===409){
+        // 冲突: 保留当前编辑内容与 base_sha(旧值), 用户可复制内容后手动刷新
+        alert("冲突: "+(res.json.error||"文件已被其他修改更新")+"\n你当前编辑的内容已保留在编辑框中。\n建议: 复制内容 → 关闭抽屉重新打开获取最新版本 → 粘贴后再保存。");
+        var ta=document.getElementById("soulEdit");
+        if(ta&&ta.value!==content){ta.value=content;}
+        return;
+      }
       if(!res.json.ok){alert("保存失败: "+(res.json.error||res.status));return;}
-      wbCache[name].soul=res.json.data;
-      renderSoulTab(body,name,wbCache[name]);
+      // 保存成功: 用完整响应更新缓存(后端已返回 content/sha256/mtime);
+      // 若响应异常缺失 content, 重新从服务端读取权威版本, 不用不完整对象覆盖缓存
+      var d=res.json.data||{};
+      var done=function(full){
+        if(full&&typeof full.content==="string"){wbCache[name].soul=full;renderSoulTab(body,name,wbCache[name]);}
+        else{delete wbCache[name].soul;renderSoulTab(body,name,wbCache[name]);}
+      };
+      if(typeof d.content==="string"){done(d);}
+      else{
+        fetchJSON("/api/v1/profiles/"+name+"/soul").then(function(r2){
+          done(r2.json&&r2.json.ok?r2.json.data:null);
+        }).catch(function(){done(null);});
+      }
     }).catch(function(e){alert("网络错误: "+e);});
   });
 }
@@ -1349,6 +1439,11 @@ function projLatestHtml(s,pid){
 }
 function renderProjects(){
   var el=document.getElementById("projCards");
+  if(D.projectsOk===false){
+    // 数据源故障如实呈现, 不伪装成"无项目"
+    el.innerHTML='<div class="empty" style="color:var(--st-blocked)">⚠ 项目数据源不可用'+(D.projectsError?(' · '+esc(D.projectsError)):'')+'</div>';
+    return;
+  }
   if(!(D.projects||[]).length){el.innerHTML='<div class="empty">暂无项目</div>';return;}
   el.innerHTML=D.projects.map(function(p){
     var s=projStats(p.id);
@@ -1380,28 +1475,57 @@ function renderProjects(){
   });
 }
 
-/* ---------- activity: 真实 task_events 事件流 (B路线) ---------- */
+/* ---------- activity: 真实 task_events 事件流 (最新优先; 加载更多=向后端取历史) ---------- */
 var actShown=0;
+var actHistoryBusy=false, actHistoryDone=false;
 function actEventRow(e){
   return liveEventHtml(e);
 }
 function renderActivity(reset){
   var wrap=document.getElementById("actList");
-  if(reset){actShown=0;wrap.innerHTML="";}
-  // 数据源: 优先运行期已加载的真实事件, 否则从 API 拉历史
+  if(reset){actShown=0;wrap.innerHTML="";actHistoryDone=false;
+    var m=document.getElementById("actMore");m.hidden=true;}
   if(ACT_EVENTS.length){
     var page=ACT_EVENTS.slice(actShown,actShown+ACT_PAGE);
     wrap.insertAdjacentHTML("beforeend",page.map(actEventRow).join(""));
     actShown+=page.length;
     var more=document.getElementById("actMore");
-    more.hidden=actShown>=ACT_EVENTS.length;
-    more.textContent="加载更多("+(ACT_EVENTS.length-actShown)+" 条)";
+    var localRemain=ACT_EVENTS.length-actShown;
+    if(localRemain>0){
+      more.hidden=false;
+      more.textContent="加载更多("+(localRemain)+" 条)";
+    }else{
+      // 本地已取完: 历史再向前分页(真正向后端取更旧事件)
+      more.hidden=actHistoryDone;
+      if(!actHistoryDone)more.textContent="加载更早的历史…";
+    }
     return;
   }
   // ACT_EVENTS 空(启动拉取失败/API 离线): 如实提示
   wrap.innerHTML='<div class="empty">事件数据不可达(API 离线)</div>';
 }
-document.getElementById("actMore").addEventListener("click",function(){renderActivity(false);});
+document.getElementById("actMore").addEventListener("click",function(){
+  var localRemain=ACT_EVENTS.length-actShown;
+  if(localRemain>0){renderActivity(false);return;}
+  if(actHistoryBusy||actHistoryDone)return;
+  actHistoryBusy=true;
+  var oldest=ACT_EVENTS.length?ACT_EVENTS[ACT_EVENTS.length-1].id:0;
+  fetchJSON("/api/v1/events?order=desc&before="+oldest).then(function(r){
+    actHistoryBusy=false;
+    if(!(r.json&&r.json.ok))return;
+    var evs=(r.json.data.events||[]).slice().sort(function(a,b){return b.id-a.id;});
+    if(!evs.length||!r.json.data.has_more){
+      actHistoryDone=evs.length===0||!r.json.data.has_more;
+      if(evs.length)prependActivities(evs);
+      if(!r.json.data.has_more){actHistoryDone=true;document.getElementById("actMore").hidden=true;}
+      return;
+    }
+    prependActivities(evs);
+    // prependActivities 会触发 renderActivity(true) 重置 actShown — 修正为保留已读位置
+    actShown=ACT_EVENTS.length-evs.length;
+    renderActivity(false);
+  }).catch(function(){actHistoryBusy=false;});
+});
 
 /* 初始渲染由启动流程 bootRender() 负责(数据到达后), 此处不再用空数据渲染 */
 })();

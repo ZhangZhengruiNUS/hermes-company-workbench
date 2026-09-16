@@ -76,7 +76,8 @@ def _task_row(r):
 
 def board_payload():
     """单一短读事务: 任务列表+统计+当前事件游标, 保证同一响应口径一致"""
-    with _ro_connect() as db:
+    db = _ro_connect()
+    try:
         rows = db.execute(f"SELECT {TASK_LIST_COLS} FROM tasks ORDER BY COALESCE(completed_at,created_at) DESC").fetchall()
         max_ev = db.execute("SELECT COALESCE(MAX(id),0) FROM task_events").fetchone()[0]
         tasks = [_task_row(r) for r in rows]
@@ -85,43 +86,79 @@ def board_payload():
             counts[t["status"]] = counts.get(t["status"], 0) + 1
         running = db.execute(
             "SELECT COUNT(*) FROM task_runs WHERE status='running' AND ended_at IS NULL").fetchone()[0]
-        # 真实项目实体 (projects.db 为独立库, 只读并查; 跨库非原子, 仅展示用)
-        projects = []
+    finally:
+        db.close()
+    # 真实项目实体 (projects.db 为独立库, 只读并查; 跨库非原子, 仅展示用)
+    # 故障不再伪装成"无项目": projects_ok=false 时前端显示数据源错误
+    projects, projects_ok, projects_err = [], True, ""
+    if os.path.isfile(PROJECTS_DB):
+        pdb = None
         try:
-            with _ro_connect(path=PROJECTS_DB) as pdb:
-                prows = pdb.execute(
-                    "SELECT id,name,description,color,created_at FROM projects ORDER BY created_at").fetchall()
-                for p in prows:
-                    projects.append({"id": p["id"], "name": p["name"], "desc": p["description"] or "",
-                                     "color": p["color"] or "", "created_at": p["created_at"]})
-        except Exception:
-            projects = []  # projects.db 不存在/损坏时如实空列表, 不阻塞任务实时化
+            pdb = _ro_connect(path=PROJECTS_DB)
+            prows = pdb.execute(
+                "SELECT id,name,description,color,created_at FROM projects ORDER BY created_at").fetchall()
+            for p in prows:
+                projects.append({"id": p["id"], "name": p["name"], "desc": p["description"] or "",
+                                 "color": p["color"] or "", "created_at": p["created_at"]})
+        except Exception as e:
+            projects_ok, projects_err = False, str(e)[:120]
+        finally:
+            if pdb is not None:
+                pdb.close()
     return {"tasks": tasks, "counts": counts, "total": len(tasks),
             "events_cursor": max_ev, "runs_running": running,
-            "projects": projects, "fetched_at": int(time.time())}
+            "projects": projects, "projects_ok": projects_ok, "projects_error": projects_err,
+            "fetched_at": int(time.time())}
 
-def events_payload(after_id=0, limit=200):
-    """真实 task_events; heartbeat 不进入页面事件流(高频噪声)"""
-    with _ro_connect() as db:
+def events_payload(after_id=0, limit=200, before_id=0, order="asc"):
+    """真实 task_events; heartbeat 不进入页面事件流(高频噪声).
+    两种读法:
+    - 增量补取: order=asc + after_id(已消费游标), 返回 has_more+next_cursor
+    - 历史向前分页: order=desc + before_id(已加载最旧一条 id), 返回更旧一页 + has_more
+    过滤 heartbeat 不影响游标确定性。"""
+    db = _ro_connect()
+    try:
+        if order == "desc":
+            # 历史分页: 取 id<before 的最近 limit 条非heartbeat, 再倒序输出(最新在前)
+            rows = db.execute(
+                "SELECT e.id, e.task_id, e.kind, e.payload, e.created_at, t.title, t.assignee "
+                "FROM task_events e LEFT JOIN tasks t ON t.id=e.task_id "
+                "WHERE e.kind!='heartbeat' AND (?<=0 OR e.id<?) "
+                "ORDER BY e.id DESC LIMIT ?", (before_id, before_id, limit)).fetchall()
+            rows = list(rows)[::-1]  # 统一 id ASC 内部序, 前端自行倒排
+            page = rows[-limit:] if limit else []
+            evs = []
+            for r in page:
+                evs.append(_event_dict(r))
+            return {"events": evs, "has_more": len(page) >= limit,
+                    "next_before": page[0]["id"] if page else before_id}
         rows = db.execute(
             "SELECT e.id, e.task_id, e.kind, e.payload, e.created_at, t.title, t.assignee "
             "FROM task_events e LEFT JOIN tasks t ON t.id=e.task_id "
             "WHERE e.id>? AND e.kind!='heartbeat' "
-            "ORDER BY e.id ASC LIMIT ?", (after_id, limit)).fetchall()
-        max_ev = db.execute("SELECT COALESCE(MAX(id),0) FROM task_events").fetchone()[0]
-    evs = []
-    for r in rows:
-        try:
-            payload = json.loads(r["payload"]) if r["payload"] else {}
-        except Exception:
-            payload = {"raw": str(r["payload"])[:200]}
-        evs.append({"id": r["id"], "task_id": r["task_id"], "kind": r["kind"],
-                    "payload": payload, "created_at": r["created_at"],
-                    "title": r["title"], "assignee": r["assignee"]})
-    return {"events": evs, "cursor": max_ev}
+            "ORDER BY e.id ASC LIMIT ?+40", (after_id, limit)).fetchall()
+    finally:
+        db.close()
+    evs = [_event_dict(r) for r in rows]
+    # 超页心跳可能挤占窗口: 已取行数 >= limit 时向后探测确保进度确定
+    has_more = len(evs) >= limit
+    page = evs[:limit]
+    next_cursor = page[-1]["id"] if page else after_id
+    return {"events": page, "has_more": has_more, "next_cursor": next_cursor,
+            "cursor": next_cursor, "after": after_id}
+
+def _event_dict(r):
+    try:
+        payload = json.loads(r["payload"]) if r["payload"] else {}
+    except Exception:
+        payload = {"raw": str(r["payload"])[:200]}
+    return {"id": r["id"], "task_id": r["task_id"], "kind": r["kind"],
+            "payload": payload, "created_at": r["created_at"],
+            "title": r["title"], "assignee": r["assignee"]}
 
 def task_detail(task_id):
-    with _ro_connect() as db:
+    db = _ro_connect()
+    try:
         r = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         if not r:
             return None
@@ -131,18 +168,20 @@ def task_detail(task_id):
         events = db.execute(
             "SELECT id,kind,created_at FROM task_events WHERE task_id=? AND kind!='heartbeat' "
             "ORDER BY id DESC LIMIT 30", (task_id,)).fetchall()
+        # 依赖链 (task_links 只表依赖不表归属): 上游=阻塞本任务的父任务, 下游=依赖本任务的子任务
+        ups = db.execute(
+            "SELECT l.parent_id AS id, t.title, t.status FROM task_links l "
+            "LEFT JOIN tasks t ON t.id=l.parent_id WHERE l.child_id=?", (task_id,)).fetchall()
+        downs = db.execute(
+            "SELECT l.child_id AS id, t.title, t.status FROM task_links l "
+            "LEFT JOIN tasks t ON t.id=l.child_id WHERE l.parent_id=?", (task_id,)).fetchall()
+    finally:
+        db.close()
     d = _task_row(r)
     d["body"] = (r["body"] or "")[:4000]
     d["result"] = (r["result"] or "")[:8000]
     d["runs"] = [dict(x) for x in runs]
     d["events"] = [dict(x) for x in events]
-    # 依赖链 (task_links 只表依赖不表归属): 上游=阻塞本任务的父任务, 下游=依赖本任务的子任务
-    ups = db.execute(
-        "SELECT l.parent_id AS id, t.title, t.status FROM task_links l "
-        "LEFT JOIN tasks t ON t.id=l.parent_id WHERE l.child_id=?", (task_id,)).fetchall()
-    downs = db.execute(
-        "SELECT l.child_id AS id, t.title, t.status FROM task_links l "
-        "LEFT JOIN tasks t ON t.id=l.child_id WHERE l.parent_id=?", (task_id,)).fetchall()
     d["upstream"] = [dict(x) for x in ups]
     d["downstream"] = [dict(x) for x in downs]
     return d
@@ -184,7 +223,11 @@ class EventHub:
             try:
                 q.put_nowait(obj)
             except Exception:
-                self.unsubscribe(q)
+                # 队列满: 订阅者跟不上。显式要求其重新同步, 而不是移除后静默只发 keepalive
+                try:
+                    q.put_nowait({"type": "resync"})
+                except Exception:
+                    self.unsubscribe(q)
 
     def _profile_signature(self):
         try:
@@ -194,7 +237,13 @@ class EventHub:
                 st_soul = os.path.getmtime(os.path.join(h, "SOUL.md")) if os.path.isfile(os.path.join(h, "SOUL.md")) else 0
                 sk = os.path.join(h, "skills")
                 st_sk = int(os.path.getmtime(sk)) if os.path.isdir(sk) else 0
-                parts.append(f"{n}:{int(st_soul)}:{st_sk}")
+                # config.yaml 纳入变化检测 (mtime+size, size 防 mtime 精度不足)
+                cfg = os.path.join(h, "config.yaml")
+                if os.path.isfile(cfg):
+                    st_cfg = f"{int(os.path.getmtime(cfg))}:{os.path.getsize(cfg)}"
+                else:
+                    st_cfg = "0"
+                parts.append(f"{n}:{int(st_soul)}:{st_sk}:{st_cfg}")
             return "|".join(parts)
         except Exception:
             return ""
@@ -203,23 +252,27 @@ class EventHub:
         def loop():
             time.sleep(1.0)
             try:
-                with _ro_connect() as db:
+                db = _ro_connect()
+                try:
                     self._cursor = db.execute("SELECT COALESCE(MAX(id),0) FROM task_events").fetchone()[0]
+                finally:
+                    db.close()
                 self._profile_sig = self._profile_signature()
             except Exception:
                 pass
             while True:
                 time.sleep(1.5)
                 try:
-                    with _ro_connect() as db:
+                    db = _ro_connect()
+                    try:
                         rows = db.execute(
                             "SELECT e.id, e.task_id, e.kind, e.created_at, t.title, t.assignee "
                             "FROM task_events e LEFT JOIN tasks t ON t.id=e.task_id "
                             "WHERE e.id>? ORDER BY e.id ASC LIMIT 50", (self._cursor,)).fetchall()
                         if rows:
                             self._cursor = rows[-1]["id"]
-                    if not rows:
-                        continue
+                    finally:
+                        db.close()
                     core = [r for r in rows if r["kind"] in EVENT_KINDS_CORE]
                     if core:
                         self.broadcast({"type": "events", "cursor": self._cursor,
@@ -228,7 +281,7 @@ class EventHub:
                     self.broadcast({"type": "source_error", "error": "kanban.db missing"})
                 except Exception as e:
                     self.broadcast({"type": "source_error", "error": str(e)[:120]})
-                # profile 文件变化检测(每轮顺带)
+                # profile/config 文件变化检测(每轮都做, 不依赖有无新 task_events)
                 try:
                     sig = self._profile_signature()
                     if sig != self._profile_sig:
@@ -395,7 +448,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/v1/events":
                 m = re.search(r"[?&]after=(\d+)", self.path)
                 after = int(m.group(1)) if m else 0
-                return self._json(200, {"ok": True, "data": events_payload(after)})
+                m = re.search(r"[?&]before=(\d+)", self.path)
+                before = int(m.group(1)) if m else 0
+                order = "desc" if re.search(r"[?&]order=desc", self.path) else "asc"
+                return self._json(200, {"ok": True, "data": events_payload(after, 200, before, order)})
 
             m = re.match(r"^/api/v1/tasks/([^/]+)$", path)
             if m:
@@ -510,7 +566,10 @@ class Handler(BaseHTTPRequestHandler):
         os.replace(tmp, p)
         new_sha = sha256_file(p)
         audit("soul_save", name, f"{cur_sha[:12]}->{new_sha[:12]}")
-        return self._json(200, {"ok": True, "data": {"sha256": new_sha, "note": "SOUL 修改在员工下次会话启动时生效"}})
+        # 返回完整对象: 前端用它更新缓存, 避免元数据响应覆盖掉 content/mtime
+        return self._json(200, {"ok": True, "data": {"content": content, "sha256": new_sha,
+                                                     "mtime": int(os.path.getmtime(p)),
+                                                     "note": "SOUL 修改在员工下次会话启动时生效"}})
 
     def _toggle_skill(self, name, skill):
         if not self._prof_exists(name):
@@ -548,7 +607,15 @@ class Handler(BaseHTTPRequestHandler):
         q = HUB.subscribe()
         try:
             # 初始 hello 告知当前游标(前端据此判断是否需要补取)
-            self.wfile.write(f"data: {json.dumps({'type':'hello'}, ensure_ascii=False)}\n\n".encode())
+            try:
+                db = _ro_connect()
+                try:
+                    cur = db.execute("SELECT COALESCE(MAX(id),0) FROM task_events").fetchone()[0]
+                finally:
+                    db.close()
+            except Exception:
+                cur = 0
+            self.wfile.write(f"data: {json.dumps({'type':'hello','cursor':cur}, ensure_ascii=False)}\n\n".encode())
             self.wfile.flush()
             while True:
                 try:
