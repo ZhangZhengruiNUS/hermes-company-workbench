@@ -399,15 +399,23 @@ MONITOR_REGISTRY = os.environ.get("WORKBENCH_MONITOR_REGISTRY",
 _AUTOMATIONS_CACHE = {"mtime": None, "data": None, "source_ok": True}
 
 def _issue_of(job):
-    """按本机真实语义判定 has_issue/issue_summary; paused/completed 不算故障"""
+    """按本机真实语义判定 has_issue/issue_summary; paused/completed 不算故障。
+    本机(网关 site-packages cron 0.19.0) last_status 取值仅 ok/error/None;
+    无 delivery_failed/delivery_queued/blocked_config 状态(送达失败=独立字段 last_delivery_error)。
+    scheduler 健康沿用官方双心跳语义(get_ticker_heartbeat_age/get_ticker_success_age,
+    阈值=TICKER_INTERVAL_SECONDS*3+20, 官方常量非自造)。"""
     lde = job.get("last_delivery_error")
     if lde:
         return True, "执行成功，但消息送达失败"
     le = job.get("last_error")
     if job.get("state") == "error":
         return True, (le or "无法计算下次执行时间")[:160]
-    if job.get("last_status") == "error":
+    ls = job.get("last_status")
+    if ls == "error":
         return True, (le or "执行失败")[:160]
+    if ls is not None and ls != "ok":
+        # 本机当前不会出现, 但若未来版本引入新失败态: 不放行为正常
+        return True, ("未知状态: " + str(ls))[:160]
     return False, ""
 
 def _load_cron_jobs():

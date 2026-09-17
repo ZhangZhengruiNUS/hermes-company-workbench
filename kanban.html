@@ -526,7 +526,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
 <script>
 /* 部署版本: build.py 构建时注入 git short SHA; 直接打开模板(未构建)时显示 dev */
 (function(){
-  var v="66594e9";
+  var v="088b793";
   if(v.indexOf("__WB")===0)v="dev";
   var el=document.getElementById("wbVer");
   if(el)el.textContent="Workbench · "+v;
@@ -1277,13 +1277,15 @@ function fmtAutoTs(iso){
 function autoStatusTxt(a){
   if(a.has_issue){
     if(a.issue_summary.indexOf("送达失败")>=0)return{t:"送达失败",c:"var(--st-running)"};
+    if(a.issue_summary.indexOf("未知状态")===0)return{t:"状态:"+a.last_status,c:"var(--st-ready)"};
     return{t:"执行失败",c:"var(--st-blocked)"};
   }
   if(a.state==="paused")return{t:"已暂停",c:"var(--text-3)"};
   if(a.state==="completed")return{t:"已完成",c:"var(--st-done)"};
   if(a.last_status==="ok")return{t:"正常",c:"var(--st-done)"};
   if(a.last_status==null)return{t:"未运行过",c:"var(--text-3)"};
-  return{t:"正常",c:"var(--st-done)"};
+  /* 兜底: 未识别的非空 last_status 一律中性显示, 禁止误报"正常" */
+  return{t:"状态:"+a.last_status,c:"var(--st-ready)"};
 }
 function renderAutomations(){
   if(D.automationsSourceOk===false)
