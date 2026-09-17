@@ -171,6 +171,8 @@ html[data-theme="light"] .lock-btn{background:rgba(255,255,255,.6)}
 .b-blocked{color:var(--st-blocked);background:color-mix(in srgb,var(--st-blocked) 12%,transparent)}
 .b-done{color:var(--st-done);background:color-mix(in srgb,var(--st-done) 12%,transparent)}
 .b-archived{color:var(--st-archived);background:color-mix(in srgb,var(--st-archived) 14%,transparent)}
+/* 新增状态的 badge 兜底: 未知状态 badge() 用 SMLABEL[st]||st 显示原文, 色调用中性灰 */
+.b-review,.b-triage,.b-scheduled,.b-unknown{color:var(--st-todo);background:color-mix(in srgb,var(--st-todo) 12%,transparent)}
 .proj-mini{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:16px 18px;
   transition:border-color var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
 .proj-mini:hover{transform:translateY(-2px);border-color:rgba(122,165,255,.25)}
@@ -522,7 +524,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
 <script>
 /* 部署版本: build.py 构建时注入 git short SHA; 直接打开模板(未构建)时显示 dev */
 (function(){
-  var v="fa1645df";
+  var v="fd526d5";
   if(v.indexOf("__WB")===0)v="dev";
   var el=document.getElementById("wbVer");
   if(el)el.textContent="Workbench · "+v;
@@ -547,12 +549,16 @@ setTimeout(function(){  // 函数声明提升完成后再挂
     Object.defineProperty(window.WB_DEBUG,"ACT_EVENTS",{get:function(){return ACT_EVENTS;}});
     Object.defineProperty(window.WB_DEBUG,"D",{get:function(){return D;}});
     window.WB_DEBUG.liveEventHtml=liveEventHtml;
+    window.WB_DEBUG.renderOverview=renderOverview;
   }catch(e){}
 },0);
 var VIEWS = {overview:"总览",tasks:"任务",team:"团队",projects:"项目",activity:"活动"};
+/* 状态集合以本机 Hermes hermes_cli.kanban_db.VALID_STATUSES 为准(2026-09-17 实测 9 种);
+   badge/SMLABEL 对未知状态兜底显示原始 key(badge() 已有 SMLABEL[st]||st), 未来新状态可见不丢弃 */
 var ST = [
-  {key:"todo",label:"待办"},{key:"ready",label:"就绪"},{key:"running",label:"进行中"},
-  {key:"blocked",label:"阻塞"},{key:"done",label:"完成"},{key:"archived",label:"归档"}
+  {key:"triage",label:"分诊"},{key:"todo",label:"待办"},{key:"ready",label:"就绪"},
+  {key:"running",label:"进行中"},{key:"review",label:"复核"},{key:"blocked",label:"阻塞"},
+  {key:"scheduled",label:"已排期"},{key:"done",label:"完成"},{key:"archived",label:"归档"}
 ];
 var SMLABEL = {}; ST.forEach(function(s){SMLABEL[s.key]=s.label;});
 var AVATARS = {
@@ -1257,7 +1263,7 @@ function renderOverview(){
   var cur=D.tasks.filter(function(t){return t.status==="running"||t.status==="blocked"||t.status==="ready";});
   var curEl=document.getElementById("ovCurrent");
   if(cur.length===0){
-    curEl.innerHTML='<div class="empty-state" style="padding:12px 16px;text-align:left"><b style="display:inline">当前没有未结束的 Kanban 任务</b> · 未发现 running/blocked/ready 状态的任务</div>';
+    curEl.innerHTML='<div class="empty-state" style="padding:12px 16px;text-align:left"><b style="display:inline">当前没有未结束的 Kanban 任务</b></div>';
   }else{
     curEl.innerHTML=cur.map(function(t){
       var p=t.project_id?projById[t.project_id]:null;
@@ -1278,9 +1284,11 @@ function renderOverview(){
     var pct=s.rate==null?0:s.rate;
     var act=s.activeTasks[0];
     var donePill=(s.rate===100)?'<span class="pill-done">关联任务已全部完成</span>':'';
+    var activeTotal=s.total-s.archived;
+    var pm='当前任务 '+s.done+'/'+activeTotal+' 已完成'+(s.archived?' · 历史归档 '+s.archived+' 项':'');
     return '<div class="proj-mini"><div class="name">'+esc(p.name)+donePill+'</div>'+
       '<div class="prog"><i style="width:'+pct+'%"></i></div>'+
-      '<div class="meta">完成率 '+(s.rate==null?"—":s.rate+"%")+' · 共'+s.total+'任务'+(s.archived?'(归档'+s.archived+')':'')+' · '+(act?("当前: "+esc(act.title.slice(0,36))):"无进行中任务")+'</div></div>';
+      '<div class="meta" title="公式: 完成 '+s.done+' / 未归档 '+activeTotal+'">'+pm+'</div></div>';
   }).join("")||'<div class="card" style="color:var(--text-3)">暂无项目</div>';
 
   // attention: blocked only
