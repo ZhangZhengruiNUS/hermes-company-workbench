@@ -299,6 +299,8 @@ html[data-theme="light"] .lock-btn{background:rgba(255,255,255,.6)}
 .act-item .who-row{margin-top:5px;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-3)}
 .act-item .who-row .avatar{width:18px;height:18px;font-size:9px}
 .retrolabel{font-size:11px;color:var(--st-done);border:1px solid color-mix(in srgb,var(--st-done) 35%,transparent);border-radius:999px;padding:1px 8px;margin-left:8px}
+.act-item.act-muted{opacity:.5}
+.act-item.act-muted .stx b{font-weight:500}
 /* workbench live tabs */
 .wb-tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--hairline);padding-bottom:10px}
 .wb-tab{border:none;background:transparent;color:var(--text-2);font-size:13px;font-weight:550;padding:6px 14px;border-radius:999px;
@@ -414,7 +416,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
     <button class="nav-item" data-view="team"><span class="ico">◫</span>团队<span class="cnt" id="nTeam"></span></button>
     <button class="nav-item" data-view="projects"><span class="ico">◨</span>项目<span class="cnt" id="nProj"></span></button>
     <button class="nav-item" data-view="activity"><span class="ico">≡</span>活动</button>
-    <div class="side-foot" id="sideFoot"><span class="st-dot" id="footDot"></span><b id="footMode">连接中…</b><br>更新时间 <span class="mono" id="footSnap"></span><br><span id="footSub">正在建立实时连接</span></div>
+    <div class="side-foot" id="sideFoot"><span class="st-dot" id="footDot"></span><b id="footMode">连接中…</b><br>更新时间 <span class="mono" id="footSnap"></span><br><span id="footSub">正在建立实时连接</span><br><span id="wbVer" style="opacity:.7"></span></div>
   </nav>
 
   <div class="main">
@@ -425,7 +427,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
       <div class="spacer"></div>
       <span class="search-wrap"><span class="s-ico">⌕</span><input class="search" id="searchBox" type="search" placeholder="搜索任务标题 / ID…" aria-label="搜索任务"></span>
       <button class="theme-btn" id="themeBtn" title="切换深浅色" aria-label="切换深浅色">☾</button>
-      <button class="lock-btn" id="lockBtn" title="点击解锁修改(需密码)">🔒 只读</button>
+      <button class="lock-btn" id="lockBtn" title="点击解锁修改(需密码)">🔒 编辑已锁定</button>
     </header>
 
     <main class="content">
@@ -442,7 +444,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
           <div>
             <div class="sect-title">需关注</div>
             <div id="ovAttention"></div>
-            <div class="sect-title">团队工作量</div>
+            <div class="sect-title">团队任务概览</div>
             <div id="ovWorkload"></div>
             <div class="sect-title">最近动态 <button class="lnk" data-goto="activity">查看全部</button></div>
             <div class="card" id="ovFeed" style="padding:6px 16px"></div>
@@ -453,6 +455,12 @@ html[data-rt="true"] .drawer{background:var(--surface)}
       <!-- 任务 -->
       <section class="view" id="view-tasks">
         <div class="toolbar">
+          <div class="seg" id="quickSeg" role="tablist" aria-label="快捷视图">
+            <button data-q="active" class="active" role="tab">当前工作</button>
+            <button data-q="done" role="tab">最近完成</button>
+            <button data-q="archived" role="tab">归档</button>
+            <button data-q="all" role="tab">全部</button>
+          </div>
           <div class="seg" role="tablist" aria-label="任务视图切换">
             <button id="modeBoard" class="active" role="tab">看板</button>
             <button id="modeList" role="tab">列表</button>
@@ -484,7 +492,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
 
       <!-- 活动 -->
       <section class="view" id="view-activity">
-        <div class="sect-title">任务记录 · 完成与归档(非实时事件流)</div>
+        <div class="sect-title">实时活动</div>
         <div class="ltable" id="actList" style="background:transparent"></div>
         <button class="loadmore" id="actMore" hidden>加载更多</button>
       </section>
@@ -502,6 +510,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
 </nav>
 
 <div class="mask" id="mask"></div>
+<div id="toast" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:120;background:var(--surface-raised);border:1px solid var(--hairline);border-radius:999px;padding:8px 18px;font-size:13px;color:var(--text-2);box-shadow:var(--shadow-lift)"></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="任务详情">
   <div class="d-head">
     <h3 id="dTitle"></h3>
@@ -510,6 +519,15 @@ html[data-rt="true"] .drawer{background:var(--surface)}
   <div class="d-body" id="dBody"></div>
 </aside>
 
+<script>
+/* 部署版本: build.py 构建时注入 git short SHA; 直接打开模板(未构建)时显示 dev */
+(function(){
+  var v="__WB_VERSION__";
+  if(v.indexOf("__WB")===0)v="dev";
+  var el=document.getElementById("wbVer");
+  if(el)el.textContent="Workbench · "+v;
+})();
+</script>
 <script>
 /* 实时化(B路线): 数据不再内嵌, 启动时从 /api/v1/board 拉取; SSE/轮询驱动局部更新 */
 window.KANBAN_DATA = null;
@@ -521,6 +539,16 @@ window.KANBAN_DATA = null;
 var D = {tasks:[], projects:[], profiles:[], snapshot_at:null};
 var STATE = {mode:"offline", lastOk:0, cursor:0, evCursor:0, es:null, esReady:false, pollTimer:null, visibility:true};
 window.WB_DEBUG = {STATE:STATE, LIVE:null}; // 调试/验收用, 不含敏感数据
+/* 验收钩子: 暴露内部状态/函数供自动化自测, 不含敏感数据 */
+setTimeout(function(){  // 函数声明提升完成后再挂
+  try{
+    window.WB_DEBUG.F=F;window.WB_DEBUG.filtered=filtered;window.WB_DEBUG.setQuick=setQuick;
+    Object.defineProperty(window.WB_DEBUG,"currentView",{get:function(){return currentView;}});
+    Object.defineProperty(window.WB_DEBUG,"ACT_EVENTS",{get:function(){return ACT_EVENTS;}});
+    Object.defineProperty(window.WB_DEBUG,"D",{get:function(){return D;}});
+    window.WB_DEBUG.liveEventHtml=liveEventHtml;
+  }catch(e){}
+},0);
 var VIEWS = {overview:"总览",tasks:"任务",team:"团队",projects:"项目",activity:"活动"};
 var ST = [
   {key:"todo",label:"待办"},{key:"ready",label:"就绪"},{key:"running",label:"进行中"},
@@ -790,14 +818,25 @@ var ACT_KIND_META={
   timed_out:{ico:"⏱",cls:"f-block"},gave_up:{ico:"✕",cls:"f-block"},
   dependency_wait:{ico:"⏳",cls:""},commented:{ico:"💬",cls:""},attached:{ico:"📎",cls:""}
 };
+/* 活动 kind 中文化; 未识别保留原始值 */
+var ACT_KIND_CN={
+  created:"创建",claimed:"认领",spawned:"启动执行",promoted:"晋升",
+  completed:"完成",archived:"归档",blocked:"阻塞",unblocked:"解除阻塞",
+  crashed:"崩溃",timed_out:"超时",gave_up:"放弃",dependency_wait:"等待依赖",
+  commented:"评论",attached:"添加附件"
+};
+var ACT_KIND_MUTED={"dependency_wait":1,"heartbeat":1};
 function liveEventHtml(e){
   var m=ACT_KIND_META[e.kind]||{ico:"·",cls:""};
   var ico='<span class="act-ico '+m.cls+'">'+m.ico+'</span>';
   var title=e.title||e.task_id||"(未知任务)";
-  return '<div class="act-item">'+ico+
+  var kindTxt=ACT_KIND_CN[e.kind]||e.kind;
+  var who=e.assignee?esc(CN[e.assignee]||e.assignee):"系统";
+  var muted=ACT_KIND_MUTED[e.kind]?" act-muted":"";
+  return '<div class="act-item'+muted+'">'+ico+
     '<span class="tm">'+fmtTs(e.created_at)+'</span>'+
-    '<span class="stx"><b>'+esc(title.slice(0,60))+'</b> <span class="tag">'+esc(e.kind)+'</span>'+
-    '<div class="who-row">'+avatarHtml(e.assignee)+esc(CN[e.assignee]||e.assignee||"系统")+'</div></span></div>';
+    '<span class="stx"><b>'+esc(title.slice(0,60))+'</b> <span class="tag">'+esc(kindTxt)+'</span>'+
+    '<div class="who-row">'+avatarHtml(e.assignee)+who+'</div></span></div>';
 }
 /* visibility: 回前台立即同步 */
 document.addEventListener("visibilitychange",function(){
@@ -843,7 +882,7 @@ function bootRender(){
   document.getElementById("nTeam").textContent=(D.profiles||[]).length;
   document.getElementById("nProj").textContent=(D.projects||[]).length;
   try{var m=localStorage.getItem("kb-taskmode");if(m==="list")setMode("list");}catch(e){}
-  showView(location.hash.slice(1)||"overview");
+  applyHash();
 }
 function bootFail(){
   LIVE.set("offline");
@@ -873,23 +912,49 @@ function bootFail(){
 })();
 
 /* ---------- filters state ---------- */
-var F={q:"",assignee:"",status:"",project:""};
+var F={q:"",assignee:"",status:"",project:"",quick:"active"};
+var QUICK_ACTIVE=["todo","ready","running","blocked","review"];
 function filtered(){
   return D.tasks.filter(function(t){
     if(F.assignee&&t.assignee!==F.assignee)return false;
     if(F.status&&t.status!==F.status)return false;
     if(F.project&&F.project!=="__none__"&&t.project_id!==F.project)return false;
     if(F.project==="__none__"&&t.project_id)return false;
+    if(F.quick==="active"&&QUICK_ACTIVE.indexOf(t.status)<0)return false;
+    if(F.quick==="done"&&t.status!=="done")return false;
+    if(F.quick==="archived"&&t.status!=="archived")return false;
     if(F.q){var q=F.q.toLowerCase();
       if(t.title.toLowerCase().indexOf(q)<0&&t.id.toLowerCase().indexOf(q)<0)return false;}
     return true;
   });
 }
-function anyFilter(){return F.q||F.assignee||F.status||F.project;}
+function anyFilter(){return F.q||F.assignee||F.status||F.project||F.quick!=="all";}
+
+/* ---------- quick view tabs (叠加在负责人/项目/状态筛选之上) ---------- */
+var quickSeg=document.getElementById("quickSeg");
+quickSeg.addEventListener("click",function(e){
+  var b=e.target.closest("button[data-q]");if(!b)return;
+  F.quick=b.getAttribute("data-q");
+  quickSeg.querySelectorAll("button").forEach(function(x){x.classList.toggle("active",x===b);});
+  if(F.quick==="done")F.status="";   // 快捷视图与状态筛选不冲突时优先快捷
+  fselS.value=F.status;
+  renderTasks();syncClear();
+});
+function setQuick(q){
+  F.quick=q;
+  quickSeg.querySelectorAll("button").forEach(function(x){x.classList.toggle("active",x.getAttribute("data-q")===q);});
+}
 
 /* ---------- search ---------- */
 var searchBox=document.getElementById("searchBox");
 searchBox.addEventListener("input",function(){F.q=searchBox.value.trim();renderTasks();syncClear();});
+searchBox.addEventListener("keydown",function(e){
+  if(e.key!=="Enter")return;
+  e.preventDefault();  // 防止 Enter 默认激活动作落到 openDetail 内聚焦的 dClose 按钮上(会立即关掉抽屉)
+  var q=searchBox.value.trim();
+  if(q&&taskById[q]){openDetail(q);return;}   // 精确 task ID 直接开详情
+  showView("tasks");renderTasks();syncClear();
+});
 
 /* filter selects (byAssign 由 reindex() 维护) */
 var fselA=document.getElementById("fAssignee"),fselS=document.getElementById("fStatus"),fselP=document.getElementById("fProject");
@@ -914,7 +979,8 @@ fselA.addEventListener("change",function(){F.assignee=fselA.value;renderTasks();
 fselS.addEventListener("change",function(){F.status=fselS.value;renderTasks();syncClear();});
 fselP.addEventListener("change",function(){F.project=fselP.value;renderTasks();syncClear();});
 document.getElementById("fClear").addEventListener("click",function(){
-  F={q:"",assignee:"",status:"",project:""};searchBox.value="";fselA.value="";fselS.value="";fselP.value="";
+  F={q:"",assignee:"",status:"",project:"",quick:F.quick};
+  searchBox.value="";fselA.value="";fselS.value="";fselP.value="";
   renderTasks();syncClear();
 });
 function syncClear(){document.getElementById("fClear").hidden=!anyFilter();
@@ -931,13 +997,43 @@ function showView(v){
   if(location.hash!=="#"+v){try{history.replaceState(null,"","#"+v);}catch(e){}}
   document.querySelector(".content").scrollTop=0;
 }
+/* 解析 hash: "#tasks?task=<id>" → {view:"tasks", task:"<id>"} */
+function parseHash(h){
+  var s=(h||"").replace(/^#/,"");
+  if(!s)return {view:"overview"};
+  var qi=s.indexOf("?");
+  if(qi<0)return {view:s};
+  var view=s.slice(0,qi),params={};
+  s.slice(qi+1).split("&").forEach(function(kv){
+    var p=kv.split("=");if(p[0])params[decodeURIComponent(p[0])]=decodeURIComponent(p[1]||"");
+  });
+  return {view:view,params:params};
+}
+function applyHash(){
+  var h=parseHash(location.hash);
+  showView(h.view);
+  if(h.view==="tasks"){
+    if(h.params&&h.params.task){
+      var t=taskById[h.params.task];
+      if(t){openDetail(h.params.task);}
+      else{toastNotice("未找到任务 "+h.params.task+"（可能已不存在）");}
+    }
+  }
+}
+var toastTimer=null;
+function toastNotice(msg){
+  var el=document.getElementById("toast");if(!el)return;
+  el.textContent=msg;el.style.display="block";
+  if(toastTimer)clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){el.style.display="none";},4000);
+}
 document.querySelectorAll(".nav-item[data-view]").forEach(function(b){
   b.addEventListener("click",function(){showView(b.getAttribute("data-view"));});
 });
 document.querySelectorAll("[data-goto]").forEach(function(b){
   b.addEventListener("click",function(){showView(b.getAttribute("data-goto"));});
 });
-window.addEventListener("hashchange",function(){showView(location.hash.slice(1));});
+window.addEventListener("hashchange",applyHash);
 
 /* ---------- drawer ---------- */
 var drawer=document.getElementById("drawer"),mask=document.getElementById("mask");
@@ -945,6 +1041,7 @@ var lastFocus=null;
 var detailSeq=0;  // 详情请求竞态保护: 只接受最新一次打开的响应
 function openDetail(id){
   var t=taskById[id];if(!t)return;
+  try{history.replaceState(null,"","#tasks?task="+encodeURIComponent(id));}catch(e){}
   var seq=++detailSeq;
   lastFocus=document.activeElement;
   var p=t.project_id?projById[t.project_id]:null;
@@ -1020,6 +1117,7 @@ function openDetail(id){
 }
 function closeDetail(){
   drawer.classList.remove("open");mask.classList.remove("open");
+  try{history.replaceState(null,"","#"+currentView);}catch(e){}
   if(lastFocus&&lastFocus.focus)lastFocus.focus();
 }
 document.getElementById("dClose").addEventListener("click",closeDetail);
@@ -1047,8 +1145,10 @@ var boardEl=document.getElementById("board");
 function renderBoard(){
   var list=filtered();
   boardEl.innerHTML="";
-  var doneIn=list.filter(function(t){return t.status==="done";}).length;
-  ST.forEach(function(s){
+  // 看板主列不含 archived(归档通过"归档"快捷视图查看), 但"归档"快捷视图下仍显示归档列
+  var cols=(F.quick==="archived")?ST.filter(function(s){return s.key==="archived";}):
+    ST.filter(function(s){return s.key!=="archived";});
+  cols.forEach(function(s){
     var col=document.createElement("div");col.className="col";
     var items=list.filter(function(t){return t.status===s.key;});
     // done 列按完成时间倒序
@@ -1094,8 +1194,13 @@ function listRowHtml(t){
 function renderList(reset){
   var wrap=document.getElementById("listTable");
   if(reset){listShown=0;wrap.innerHTML="";}
-  var list=filtered().slice().sort(function(a,b){return(b.completed_at||b.created_at||0)-(a.completed_at||a.created_at||0);});
-  if(list.length===0){wrap.innerHTML='<div class="empty">没有匹配的任务</div>';}
+  var list=filtered().slice();
+  if(F.quick==="active"){list.sort(function(a,b){return(b.created_at||0)-(a.created_at||0);});}
+  else{list.sort(function(a,b){return(b.completed_at||b.created_at||0)-(a.completed_at||a.created_at||0);});}
+  if(list.length===0){
+    wrap.innerHTML=(F.quick==="active"&&D.tasks.length)
+      ?'<div class="empty">当前没有未结束的 Kanban 任务</div>'
+      :'<div class="empty">没有匹配的任务</div>';}
   else{
     var page=list.slice(listShown,listShown+LIST_PAGE);
     var frag=document.createElement("div");
@@ -1152,7 +1257,7 @@ function renderOverview(){
   var cur=D.tasks.filter(function(t){return t.status==="running"||t.status==="blocked"||t.status==="ready";});
   var curEl=document.getElementById("ovCurrent");
   if(cur.length===0){
-    curEl.innerHTML='<div class="empty-state"><span class="eico">☕</span><b>Kanban 暂无执行中任务</b>未发现 running/blocked/ready 状态的任务，可以派新活了。</div>';
+    curEl.innerHTML='<div class="empty-state" style="padding:12px 16px;text-align:left"><b style="display:inline">当前没有未结束的 Kanban 任务</b> · 未发现 running/blocked/ready 状态的任务</div>';
   }else{
     curEl.innerHTML=cur.map(function(t){
       var p=t.project_id?projById[t.project_id]:null;
@@ -1183,10 +1288,9 @@ function renderOverview(){
   var attEl=document.getElementById("ovAttention");
   attEl.innerHTML=att.length?
     att.map(function(t){return '<div class="wl-card" style="color:var(--st-blocked)">'+badge(t.status)+'<span class="n" style="color:var(--text)">'+esc(t.title.slice(0,34))+'</span></div>';}).join(""):
-    '<div class="empty-state" style="padding:20px"><span class="eico">✓</span><b>未发现 Kanban 阻塞任务</b></div>';
+    '<div class="empty-state" style="padding:12px 16px;text-align:left">未发现需要关注的 Kanban 事项</div>';
 
-  // workload: 头像+姓名+岗位+统计+微型进度条 (按真实状态: running=执行中, done=完成, 不把 todo/archived 算完成)
-  var totalDone=D.tasks.filter(function(t){return t.status==="done"||t.status==="archived";}).length||1;
+  // workload: 头像+姓名+岗位+统计 (按真实状态: running=执行中, done=完成; archived 不混入完成统计)
   var wl=Object.keys(byAssign).sort(function(a,b){return byAssign[b]-byAssign[a];}).map(function(a){
     var mine=D.tasks.filter(function(t){return t.assignee===a;});
     var open=mine.filter(function(t){return t.status==="running";}).length;
@@ -1194,30 +1298,47 @@ function renderOverview(){
     var fin=mine.filter(function(t){return t.status==="done";}).length;
     var prof=D.profiles.filter(function(x){return x.name===a;})[0];
     var statTxt=(open>0?open+" 项执行中 · ":"")+(readyN>0?readyN+" 项待处理 · ":"")+fin+" 项完成";
-    var pct=Math.min(100,Math.round(byAssign[a]/totalDone*100));
     return '<div class="wl-card">'+avatarHtml(a)+
       '<span class="meta"><span class="n">'+esc(CN[a]||a)+'</span><span class="role">'+esc((prof&&prof.line)||"")+'</span></span>'+
-      '<span class="mini-bar"><i style="width:'+pct+'%"></i></span>'+
       '<span class="c">'+esc(statTxt)+'</span></div>';
   }).join("");
   document.getElementById("ovWorkload").innerHTML=wl;
 
-  // feed: 最近 5 条(按完成/创建时间), 带事件 icon
-  var feed=D.tasks.slice().sort(function(a,b){
-    return(b.completed_at||b.created_at||0)-(a.completed_at||a.created_at||0);}).slice(0,5);
-  document.getElementById("ovFeed").innerHTML=feed.map(function(t){
-    return '<div class="feed-item">'+stageIcon(t)+
-      '<span class="tm">'+fmtTs(t.completed_at||t.created_at)+'</span>'+
-      '<span class="tx"><b>'+esc(t.title.slice(0,36))+(t.title.length>36?"…":"")+'</b> <span class="who">· '+esc(CN[t.assignee]||t.assignee||"")+'</span></span></div>';
-  }).join("");
+  // feed: 优先最近真实完成事件(completed), 其次任务结果/完成时间, 最后创建时间
+  var completedEvts=(ACT_EVENTS||[]).filter(function(e){return e.kind==="completed";}).slice(0,5);
+  var feedHtml="";
+  if(completedEvts.length){
+    feedHtml=completedEvts.map(function(e){
+      var who=e.assignee?esc(CN[e.assignee]||e.assignee):"系统";
+      return '<div class="feed-item"><span class="fico f-done">✓</span>'+
+        '<span class="tm">'+fmtTs(e.created_at)+'</span>'+
+        '<span class="tx"><b>'+esc((e.title||e.task_id||"").slice(0,36))+'</b> <span class="who">· '+who+' 完成</span></span></div>';
+    }).join("");
+  }else{
+    var feed=D.tasks.filter(function(t){return t.status==="done"&&t.completed_at;})
+      .sort(function(a,b){return b.completed_at-a.completed_at;}).slice(0,5);
+    feedHtml=feed.map(function(t){
+      return '<div class="feed-item">'+stageIcon(t)+
+        '<span class="tm">'+fmtTs(t.completed_at||t.created_at)+'</span>'+
+        '<span class="tx"><b>'+esc(t.title.slice(0,36))+(t.title.length>36?"…":"")+'</b> <span class="who">· '+esc(CN[t.assignee]||t.assignee||"")+'</span></span></div>';
+    }).join("");
+    if(!feedHtml)feedHtml='<div class="feed-item"><span class="tm">—</span><span class="tx" style="color:var(--text-3)">暂无最近动态</span></div>';
+  }
+  document.getElementById("ovFeed").innerHTML=feedHtml;
 }
 
 /* ---------- team ---------- */
 function renderTeam(){
   var tg=document.getElementById("teamMembers");
   var html="";
+  // Secretary(default profile, 运营线) 固定排在该线首位
   ["运营线","研发线"].forEach(function(line){
     var ps=D.profiles.filter(function(p){return(p.line||"其他")===line;});
+    ps.sort(function(a,b){
+      if(a.name==="secretary")return -1;
+      if(b.name==="secretary")return 1;
+      return 0;
+    });
     if(!ps.length)return;
     html+='<div class="sect-title">'+esc(line)+' · '+ps.length+' 岗</div><div class="team-grid">';
     ps.forEach(function(p){
@@ -1226,8 +1347,13 @@ function renderTeam(){
       // 真实状态语义: running=执行中, done=完成; todo/ready/blocked/archived 不混算
       var open=mine.filter(function(t){return t.status==="running";}).length;
       var fin=mine.filter(function(t){return t.status==="done";}).length;
-      var cur=mine.filter(function(t){return t.status==="running";})[0]||
-             mine.slice().sort(function(a,b){return(b.completed_at||b.created_at||0)-(a.completed_at||a.created_at||0);})[0];
+      var cur=mine.filter(function(t){return t.status==="running";})[0];
+      var recent=mine.filter(function(t){return t.status==="done";})
+        .sort(function(a,b){return(b.completed_at||0)-(a.completed_at||0);})[0];
+      var summary;
+      if(cur)summary='<b style="color:var(--text-3)">当前任务:</b> '+esc(cur.title.slice(0,44))+(cur.title.length>44?"…":"");
+      else if(recent)summary='<b style="color:var(--text-3)">最近任务:</b> '+esc(recent.title.slice(0,44))+(recent.title.length>44?"…":"");
+      else summary='<span style="color:var(--text-3)">暂无任务记录</span>';
       var img=AVATARS[p.name];
       var imgHtml=img
         ? '<span class="mimg"><img src="avatars/'+esc(img)+'" alt="'+esc(p.cn||p.name)+'头像" loading="lazy"></span>'
@@ -1235,9 +1361,9 @@ function renderTeam(){
       html+='<button class="mcard" data-profile="'+esc(p.name)+'">'+
         '<div class="mt">'+imgHtml+
         '<span class="mname"><span class="cn">'+esc(p.cn||p.name)+'</span><span class="en">'+esc(p.name)+'</span></span></div>'+
-        '<div class="cur">'+(cur?esc(cur.title.slice(0,44))+(cur.title.length>44?"…":""):"暂无任务记录")+'</div>'+
+        '<div class="cur">'+summary+'</div>'+
         '<div class="mfoot"><span class="mn">'+(open>0?(open+" 项执行中 · "):"")+fin+' 项完成</span>'+
-        '<span class="chip">'+esc(p.model)+'</span></div></button>';
+        '<span class="chip" title="默认模型">默认模型 '+esc(p.model)+'</span></div></button>';
     });
     html+='</div>';
   });
@@ -1294,7 +1420,7 @@ function fetchJSON(url,opt){
 function wbLockUI(){
   var btn=document.getElementById("lockBtn");
   if(!btn)return;
-  btn.textContent=WRITE_UNLOCKED?"🔓 已解锁":"🔒 只读";
+  btn.textContent=WRITE_UNLOCKED?"🔓 编辑已解锁":"🔒 编辑已锁定";
   btn.title=WRITE_UNLOCKED?"点击上锁, 恢复只读":"点击解锁修改(需密码)";
   btn.classList.toggle("unlocked",WRITE_UNLOCKED);
   document.querySelectorAll(".skill-toggle").forEach(function(b){b.disabled=!WRITE_UNLOCKED;});
@@ -1343,8 +1469,8 @@ function paintSoul(body,name,soul){
   body.innerHTML='<div class="wb-meta">实时读取 · 更新 '+fmtTs(soul.mtime||0)+
     ' · <span class="mono">'+(soul.sha256||"").slice(0,10)+'</span></div>'+
     '<pre class="soul-view" id="soulView">'+esc(md)+'</pre>'+
-    '<div class="wb-actions"><button class="wb-btn" id="soulEditBtn"'+(WRITE_UNLOCKED?"":" disabled title='只读模式, 点击顶栏🔒解锁'")+'>编辑 SOUL</button>'+
-    '<span class="wb-note">'+(WRITE_UNLOCKED?"修改在员工下次会话启动时生效":"当前只读模式 · 点击顶栏 🔒 按钮输入密码解锁修改")+'</span></div>';
+    '<div class="wb-actions"><button class="wb-btn" id="soulEditBtn"'+(WRITE_UNLOCKED?"":" disabled title='编辑已锁定, 点击顶栏🔒解锁'")+'>编辑 SOUL</button>'+
+    '<span class="wb-note">'+(WRITE_UNLOCKED?"修改在员工下次会话启动时生效":"编辑已锁定 · 点击顶栏 🔒 按钮输入密码解锁修改")+'</span></div>';
   document.getElementById("soulEditBtn").addEventListener("click",function(){editSoul(name,soul);});
 }
 function editSoul(name,soul){
@@ -1400,7 +1526,7 @@ function paintSkills(body,name,skills){
       (s.enabled?"已启用":"已禁用")+'</button></div>';
   }).join("");
   body.innerHTML='<div class="wb-meta">共 '+skills.length+' 个 skill · 启用 '+skills.filter(function(s){return s.enabled;}).length+
-    ' 个 · 目录存在即启用 · <span class="wb-note">'+(WRITE_UNLOCKED?"切换在下次会话生效, 禁用是移动备份不是删除":"只读模式 · 点击顶栏 🔒 解锁后可切换")+'</span></div>'+rows;
+    ' 个 · 目录存在即启用 · <span class="wb-note">'+(WRITE_UNLOCKED?"切换在下次会话生效, 禁用是移动备份不是删除":"编辑已锁定 · 点击顶栏 🔒 解锁后可切换")+'</span></div>'+rows;
   body.querySelectorAll(".skill-toggle").forEach(function(b){
     b.addEventListener("click",function(){
       if(!WRITE_UNLOCKED){promptUnlock();return;}
@@ -1478,13 +1604,21 @@ function renderProjects(){
     var pct=s.rate==null?0:s.rate;
     var rateTxt=s.rate==null?"—":s.rate+"%";
     var act=s.activeTasks[0];
+    // 进度文案自然化: 不直接显示 100%(done/未归档N), 公式放 title 提示
+    var activeTotal=s.total-s.archived;
+    var progMeta;
+    if(s.done>0&&s.done===activeTotal&&activeTotal>0){
+      progMeta='<span title="公式: 完成 '+s.done+' / 未归档 '+activeTotal+'">关联任务已全部完成'+(s.archived?' · 历史归档 '+s.archived+' 项':'')+'</span>';
+    }else{
+      progMeta='<span title="公式: 完成 '+s.done+' / 未归档 '+activeTotal+'">当前任务: '+s.done+'/'+activeTotal+' 已完成'+(s.archived?'\n历史归档: '+s.archived+' 项':'')+'</span>';
+    }
     return '<div class="pcard"><div class="ph"><span class="pname">'+esc(p.name)+'</span>'+
       '<span class="badge"><span class="dot"></span>共 '+s.total+' 个任务</span>'+
       (s.blocked?'<span class="badge b-blocked"><span class="dot"></span>阻塞 '+s.blocked+'</span>':'')+'</div>'+
       '<div class="pdesc">'+esc(p.desc||"")+'</div>'+
       '<div class="pstat" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">'+projStatBadges(s)+'</div>'+
       '<div class="prog"><i style="width:'+pct+'%"></i></div>'+
-      '<div class="pmeta"><span>完成率 '+rateTxt+'(done/未归档'+(s.total-s.archived)+')'+(s.archived?' · 已归档 '+s.archived:'')+'</span></div>'+
+      '<div class="pmeta" style="white-space:pre-line">'+progMeta+'</div>'+
       '<div class="pmeta">'+projLatestHtml(s,p.id)+
       '<span>'+(act?("当前: "+esc(act.title.slice(0,30))):"无进行中任务")+'</span></div>'+
       '<button class="pfilter" data-proj="'+esc(p.id)+'">查看本项目任务 →</button></div>';
