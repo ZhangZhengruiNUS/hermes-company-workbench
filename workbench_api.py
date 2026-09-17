@@ -188,11 +188,14 @@ def task_detail(task_id):
 
 def runs_payload():
     """当前/最近运行证据(团队页'进行中'展示)"""
-    with _ro_connect() as db:
+    db = _ro_connect()
+    try:
         rows = db.execute(
             "SELECT r.task_id, r.profile, r.status, r.started_at, r.last_heartbeat_at, t.title "
             "FROM task_runs r LEFT JOIN tasks t ON t.id=r.task_id "
             "WHERE r.status='running' AND r.ended_at IS NULL").fetchall()
+    finally:
+        db.close()
     return [{"task_id": x["task_id"], "profile": x["profile"], "status": x["status"],
              "started_at": x["started_at"], "last_heartbeat_at": x["last_heartbeat_at"],
              "title": x["title"]} for x in rows]
@@ -273,10 +276,14 @@ class EventHub:
                             self._cursor = rows[-1]["id"]
                     finally:
                         db.close()
-                    core = [r for r in rows if r["kind"] in EVENT_KINDS_CORE]
-                    if core:
+                    # 广播任何非 heartbeat 事件(不限于 CORE 白名单): 活动 API 返回全部
+                    # 非 heartbeat 事件, 白名单遗漏的 kind(如 project_linked/自定义 kind)
+                    # 若不广播, 前端永远收不到通知, 页面无法实时刷新。count 仍按 CORE 统计。
+                    notable = [r for r in rows if r["kind"] != "heartbeat"]
+                    if notable:
+                        core_kinds = sorted({r["kind"] for r in notable if r["kind"] in EVENT_KINDS_CORE})
                         self.broadcast({"type": "events", "cursor": self._cursor,
-                                        "count": len(core), "kinds": sorted({r['kind'] for r in core})})
+                                        "count": len(notable), "kinds": core_kinds})
                 except FileNotFoundError:
                     self.broadcast({"type": "source_error", "error": "kanban.db missing"})
                 except Exception as e:

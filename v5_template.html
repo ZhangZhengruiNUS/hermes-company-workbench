@@ -674,10 +674,22 @@ var LIVE = {
     });
   },
   fetchEventsCatchup:function(after){
-    return fetchJSON("/api/v1/events?after="+after).then(function(r){
-      if(!(r.json&&r.json.ok))return null;
-      return r.json.data;
-    });
+    // 多页补取: 从已消费游标起逐页请求, 直到 has_more=false; 防死循环: cursor 不前进立即报错
+    function step(cur, acc){
+      return fetchJSON("/api/v1/events?after="+cur).then(function(r){
+        if(!(r.json&&r.json.ok))throw new Error("events api error");
+        var d=r.json.data;
+        if(d.events&&d.events.length)acc=acc.concat(d.events);
+        var nc=d.next_cursor||d.cursor||cur;
+        if(nc<=cur){
+          if(d.has_more)throw new Error("events cursor stalled at "+cur);
+          return {events:acc, cursor:cur};
+        }
+        if(d.has_more)return step(nc, acc);
+        return {events:acc, cursor:nc};
+      });
+    }
+    return step(after, []);
   },
   // SSE 通知到达 → 按已消费游标补取事件 → 重拉 board(任务/统计同源)
   onNotify:function(msg){
@@ -756,11 +768,20 @@ function loadProfilesMeta(){
 }
 /* 活动流 prepend 真实事件(去重 by id) */
 var ACT_EVENTS=[];
-function prependActivities(events){
+function prependActivities(events, opts){
+  opts=opts||{};
   var seen={};ACT_EVENTS.forEach(function(e){seen[e.id]=1;});
-  events.forEach(function(e){if(!seen[e.id]){seen[e.id]=1;ACT_EVENTS.push(e);}});
+  var added=0;
+  events.forEach(function(e){if(!seen[e.id]){seen[e.id]=1;ACT_EVENTS.push(e);added++;}});
   ACT_EVENTS.sort(function(a,b){return b.id-a.id;});
-  if(currentView==="activity"){renderActivity(true);}
+  if(currentView==="activity"&&added){
+    if(opts.history){
+      // 历史分页: 新事件全部比已显示内容更旧, 不重置渲染(避免已显示历史消失/跳顶);
+      // 由 actMore 流程补偿 actShown 并按页展示
+    }else{
+      renderActivity(true);
+    }
+  }
 }
 var ACT_KIND_META={
   created:{ico:"＋",cls:""},claimed:{ico:"▸",cls:""},spawned:{ico:"▸",cls:""},
@@ -1515,16 +1536,28 @@ document.getElementById("actMore").addEventListener("click",function(){
     actHistoryBusy=false;
     if(!(r.json&&r.json.ok))return;
     var evs=(r.json.data.events||[]).slice().sort(function(a,b){return b.id-a.id;});
-    if(!evs.length||!r.json.data.has_more){
-      actHistoryDone=evs.length===0||!r.json.data.has_more;
-      if(evs.length)prependActivities(evs);
-      if(!r.json.data.has_more){actHistoryDone=true;document.getElementById("actMore").hidden=true;}
+    if(!evs.length){
+      actHistoryDone=true;document.getElementById("actMore").hidden=true;
       return;
     }
-    prependActivities(evs);
-    // prependActivities 会触发 renderActivity(true) 重置 actShown — 修正为保留已读位置
-    actShown=ACT_EVENTS.length-evs.length;
-    renderActivity(false);
+    // 每次只展示一页(不足 ACT_PAGE 的尾页全部展示), 已显示内容不动
+    prependActivities(evs,{history:true});
+    var newShown=Math.min(evs.length,ACT_PAGE);
+    if(currentView==="activity"){
+      var wrap=document.getElementById("actList");
+      var page=ACT_EVENTS.slice(actShown,actShown+newShown);
+      wrap.insertAdjacentHTML("beforeend",page.map(actEventRow).join(""));
+      actShown+=page.length;
+    }
+    // 隐藏条件: 本地已全部展示 且 后端 has_more=false
+    if(!r.json.data.has_more){
+      actHistoryDone=true;
+      document.getElementById("actMore").hidden=true;
+    }else{
+      var more=document.getElementById("actMore");
+      more.hidden=false;
+      more.textContent="加载更早的历史…";
+    }
   }).catch(function(){actHistoryBusy=false;});
 });
 
