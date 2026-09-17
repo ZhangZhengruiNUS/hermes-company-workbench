@@ -438,7 +438,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
         <div class="stat-row" id="ovStats"></div>
         <div class="ov-grid">
           <div>
-            <div class="sect-title">当前任务</div>
+            <div class="sect-title">当前推进</div>
             <div id="ovCurrent"></div>
             <div class="sect-title">重点项目</div>
             <div id="ovProjects"></div>
@@ -919,14 +919,16 @@ function bootFail(){
 
 /* ---------- filters state ---------- */
 var F={q:"",assignee:"",status:"",project:"",quick:"active"};
-var QUICK_ACTIVE=["todo","ready","running","blocked","review"];
+/* "当前工作"= 本机合法状态中非终态(非 done/archived)的全部任务;
+   不手写状态清单, 避免新增状态被遗漏。 */
+function isNonTerminal(t){return t.status!=="done"&&t.status!=="archived";}
 function filtered(){
   return D.tasks.filter(function(t){
     if(F.assignee&&t.assignee!==F.assignee)return false;
     if(F.status&&t.status!==F.status)return false;
     if(F.project&&F.project!=="__none__"&&t.project_id!==F.project)return false;
     if(F.project==="__none__"&&t.project_id)return false;
-    if(F.quick==="active"&&QUICK_ACTIVE.indexOf(t.status)<0)return false;
+    if(F.quick==="active"&&!isNonTerminal(t))return false;
     if(F.quick==="done"&&t.status!=="done")return false;
     if(F.quick==="archived"&&t.status!=="archived")return false;
     if(F.q){var q=F.q.toLowerCase();
@@ -1205,7 +1207,7 @@ function renderList(reset){
   else{list.sort(function(a,b){return(b.completed_at||b.created_at||0)-(a.completed_at||a.created_at||0);});}
   if(list.length===0){
     wrap.innerHTML=(F.quick==="active"&&D.tasks.length)
-      ?'<div class="empty">当前没有未结束的 Kanban 任务</div>'
+      ?'<div class="empty">当前工作没有匹配的任务</div>'
       :'<div class="empty">没有匹配的任务</div>';}
   else{
     var page=list.slice(listShown,listShown+LIST_PAGE);
@@ -1260,10 +1262,13 @@ function renderOverview(){
     return '<div class="stat" data-st="'+s.key+'"><div class="n">'+(counts[s.key]||0)+'</div><div class="l"><span class="sdot" style="background:var(--st-'+s.key+')"></span>'+s.label+'</div></div>';
   }).join("")+'<div class="stat"><div class="n">'+(D.projects||[]).length+'</div><div class="l"><span class="sdot" style="background:var(--accent-purple-soft);box-shadow:0 0 0 3px var(--accent-purple-soft)"></span>项目</div></div>';
 
-  var cur=D.tasks.filter(function(t){return t.status==="running"||t.status==="blocked"||t.status==="ready";});
+  /* 总览"当前推进": 只展示真正正在推进/等待处理的 ready/running/blocked/review,
+     与任务页"当前工作"(非终态全集)区分; todo/triage/scheduled 只在任务页可见 */
+  var OV_ACTIVE=["ready","running","blocked","review"];
+  var cur=D.tasks.filter(function(t){return OV_ACTIVE.indexOf(t.status)>=0;});
   var curEl=document.getElementById("ovCurrent");
   if(cur.length===0){
-    curEl.innerHTML='<div class="empty-state" style="padding:12px 16px;text-align:left"><b style="display:inline">当前没有未结束的 Kanban 任务</b></div>';
+    curEl.innerHTML='<div class="empty-state" style="padding:12px 16px;text-align:left"><b style="display:inline">当前没有正在推进的 Kanban 任务</b></div>';
   }else{
     curEl.innerHTML=cur.map(function(t){
       var p=t.project_id?projById[t.project_id]:null;
