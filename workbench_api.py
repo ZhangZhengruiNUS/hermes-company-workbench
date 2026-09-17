@@ -391,6 +391,84 @@ def audit(action, name, extra=""):
     with open(AUDIT_LOG, "a") as f:
         f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S+08:00')}\t{action}\t{name}\t{extra}\n")
 
+# ============ 自动化概览(只读 Cron/监控源, Batch 3) ============
+CRON_JOBS_FILE = os.environ.get("WORKBENCH_CRON_JOBS",
+                                os.path.join(HERMES_HOME, "cron", "jobs.json"))
+MONITOR_REGISTRY = os.environ.get("WORKBENCH_MONITOR_REGISTRY",
+                                  os.path.join(os.path.expanduser("~/hermes-company/monitoring"), "registry.yaml"))
+_AUTOMATIONS_CACHE = {"mtime": None, "data": None, "source_ok": True}
+
+def _issue_of(job):
+    """按本机真实语义判定 has_issue/issue_summary; paused/completed 不算故障"""
+    lde = job.get("last_delivery_error")
+    if lde:
+        return True, "执行成功，但消息送达失败"
+    le = job.get("last_error")
+    if job.get("state") == "error":
+        return True, (le or "无法计算下次执行时间")[:160]
+    if job.get("last_status") == "error":
+        return True, (le or "执行失败")[:160]
+    return False, ""
+
+def _load_cron_jobs():
+    """只读 jobs.json; 10s mtime 缓存; 失败返回 (None, False) 不伪装成空"""
+    try:
+        mt = os.path.getmtime(CRON_JOBS_FILE)
+    except OSError:
+        return None, False
+    if _AUTOMATIONS_CACHE["mtime"] == mt and _AUTOMATIONS_CACHE["data"] is not None:
+        return _AUTOMATIONS_CACHE["data"], True
+    try:
+        with open(CRON_JOBS_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception:
+        return None, False
+    jobs = raw.get("jobs") if isinstance(raw, dict) else raw
+    if not isinstance(jobs, list):
+        return None, False
+    out = []
+    for j in jobs:
+        if not isinstance(j, dict):
+            continue
+        # 脱敏: 仅输出白名单字段, 绝不透出 prompt/skills/script/origin/chat_id
+        typ = "定时任务" if j.get("no_agent") is True else "自动化"
+        has_issue, issue = _issue_of(j)
+        out.append({
+            "id": str(j.get("id") or ""),
+            "name": str(j.get("name") or ""),
+            "state": j.get("state"),
+            "enabled": bool(j.get("enabled")),
+            "type": typ,
+            "schedule_display": j.get("schedule_display"),
+            "next_run_at": j.get("next_run_at"),
+            "last_run_at": j.get("last_run_at"),
+            "last_status": j.get("last_status"),
+            "has_issue": has_issue,
+            "issue_summary": issue if has_issue else "",
+        })
+    _AUTOMATIONS_CACHE.update(mtime=mt, data=out, source_ok=True)
+    return out, True
+
+def _load_monitors():
+    """只读监控 registry; 当前 registry 空则返回 []; 结构不符也不猜"""
+    try:
+        with open(MONITOR_REGISTRY, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        return []
+    ms = data.get("monitors")
+    if not isinstance(ms, list) or not ms:
+        return []
+    return ms  # 结构核实前不合并展示
+
+def automations_payload():
+    jobs, ok = _load_cron_jobs()
+    monitors = _load_monitors()
+    items = list(jobs or [])
+    # 监控: registry 有登记才合并; 当前为空 → 不展示监控分类
+    # (监控字段语义待核实, 本轮仅保留 hook)
+    return {"source_ok": bool(ok), "automations": items, "monitors": []}
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode()
@@ -448,6 +526,9 @@ class Handler(BaseHTTPRequestHandler):
             # ---- Kanban 实时只读层 ----
             if path == "/api/v1/board":
                 return self._json(200, {"ok": True, "data": board_payload()})
+
+            if path == "/api/v1/automations":
+                return self._json(200, {"ok": True, "data": automations_payload()})
 
             if path == "/api/v1/runs":
                 return self._json(200, {"ok": True, "data": runs_payload()})

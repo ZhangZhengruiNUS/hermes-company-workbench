@@ -446,6 +446,8 @@ html[data-rt="true"] .drawer{background:var(--surface)}
           <div>
             <div class="sect-title">需关注</div>
             <div id="ovAttention"></div>
+            <div class="sect-title">自动化</div>
+            <div id="ovAutomations"></div>
             <div class="sect-title">团队任务概览</div>
             <div id="ovWorkload"></div>
             <div class="sect-title">最近动态 <button class="lnk" data-goto="activity">查看全部</button></div>
@@ -550,6 +552,7 @@ setTimeout(function(){  // 函数声明提升完成后再挂
     Object.defineProperty(window.WB_DEBUG,"D",{get:function(){return D;}});
     window.WB_DEBUG.liveEventHtml=liveEventHtml;
     window.WB_DEBUG.renderOverview=renderOverview;
+    window.WB_DEBUG.fetchAutomations=fetchAutomations;
   }catch(e){}
 },0);
 var VIEWS = {overview:"总览",tasks:"任务",team:"团队",projects:"项目",activity:"活动"};
@@ -855,7 +858,8 @@ LIVE.set("reconnect");
 Promise.all([
   fetchJSON("/api/v1/profiles"),
   fetchJSON("/api/v1/board"),
-  fetchJSON("/api/v1/events?after=0&order=desc")
+  fetchJSON("/api/v1/events?after=0&order=desc"),
+  fetchAutomations()   // Batch 3: 自动化概览, 首次加载拉一次; 之后由 startAutomationsRefresh 刷新
 ]).then(function(rs){
   var okP=rs[0].json&&rs[0].json.ok, okB=rs[1].json&&rs[1].json.ok;
   if(okP)D.profiles=rs[0].json.data;
@@ -873,6 +877,7 @@ Promise.all([
     STATE.lastOk=d.fetched_at;D.snapshot_at="live";
     reindex();
     bootRender();
+    startAutomationsRefresh();   // Batch 3: visibilitychange + 30s interval
     LIVE.set("live");
     LIVE.startSSE();
     window.WB_DEBUG.LIVE=LIVE;
@@ -1255,6 +1260,81 @@ function stageIcon(t){
   if(tag==="调研"||tag==="审查"||tag==="验收")return '<span class="fico">⌕</span>';
   return '<span class="fico">▸</span>';
 }
+/* ---------- automations (Batch 3) ---------- */
+/* 自动化源数据(只读 /api/v1/automations): source_ok=false 时如实提示, 不伪装成 0 个 */
+function fmtAutoTs(iso){
+  if(!iso)return"";
+  var d=new Date(iso);
+  if(isNaN(d.getTime()))return"";
+  var now=new Date();
+  var hm=pad(d.getHours())+":"+pad(d.getMinutes());
+  var day=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  var that=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+  var diff=Math.round((that-day)/86400000);
+  var prefix=diff===0?"今天":diff===1?"明天":diff===-1?"昨天":(pad(d.getMonth()+1)+"-"+pad(d.getDate()));
+  return prefix+" "+hm;
+}
+function autoStatusTxt(a){
+  if(a.has_issue){
+    if(a.issue_summary.indexOf("送达失败")>=0)return{t:"送达失败",c:"var(--st-running)"};
+    return{t:"执行失败",c:"var(--st-blocked)"};
+  }
+  if(a.state==="paused")return{t:"已暂停",c:"var(--text-3)"};
+  if(a.state==="completed")return{t:"已完成",c:"var(--st-done)"};
+  if(a.last_status==="ok")return{t:"正常",c:"var(--st-done)"};
+  if(a.last_status==null)return{t:"未运行过",c:"var(--text-3)"};
+  return{t:"正常",c:"var(--st-done)"};
+}
+function renderAutomations(){
+  if(D.automationsSourceOk===false)
+    return '<div class="empty-state" style="padding:12px 16px;text-align:left;color:var(--st-running)">⚠ 自动化数据暂不可用</div>';
+  var items=(D.automations||[]).slice();
+  if(!items.length)return '<div class="empty-state" style="padding:12px 16px;text-align:left">暂无自动化任务</div>';
+  var enabledN=items.filter(function(a){return a.enabled&&a.state!=="paused";}).length;
+  var pausedN=items.filter(function(a){return a.state==="paused";}).length;
+  var withRun=items.filter(function(a){return a.next_run_at&&a.state!=="paused"&&a.state!=="completed";});
+  withRun.sort(function(a,b){return new Date(a.next_run_at)-new Date(b.next_run_at);});
+  var nextTxt=withRun.length?" 下一次 "+esc(fmtAutoTs(withRun[0].next_run_at)):"";
+  var sorted=items.filter(function(a){return!(a.state==="completed"&&!a.has_issue);})
+    .sort(function(a,b){
+      if(a.has_issue!==b.has_issue)return a.has_issue?-1:1;
+      var na=a.next_run_at?new Date(a.next_run_at).getTime():Infinity;
+      var nb=b.next_run_at?new Date(b.next_run_at).getTime():Infinity;
+      if(na!==nb)return na-nb;
+      var la=a.last_run_at?new Date(a.last_run_at).getTime():0;
+      var lb=b.last_run_at?new Date(b.last_run_at).getTime():0;
+      return lb-la;
+    }).slice(0,5);
+  var rows=sorted.map(function(a){
+    var st=autoStatusTxt(a);
+    var statusLine='<span style="color:'+st.c+'">'+esc(st.t)+'</span>';
+    if(st.t==="执行失败"&&a.issue_summary)statusLine+=' <span style="color:var(--text-3)" title="'+esc(a.issue_summary)+'">'+esc(a.issue_summary.slice(0,20))+(a.issue_summary.length>20?"…":"")+'</span>';
+    return '<div class="wl-card"><span class="n" style="color:var(--text)">'+esc(a.name.slice(0,30))+'</span>'+
+      '<span class="c" style="font-size:11px;line-height:1.6">下一次 '+esc(fmtAutoTs(a.next_run_at)||"—")+
+      ' · 上次 '+esc(fmtAutoTs(a.last_run_at)||"—")+' · '+statusLine+'</span></div>';
+  }).join("");
+  var head='<div style="font-size:12px;color:var(--text-3);margin-bottom:6px">启用中 '+enabledN+(pausedN>0?' · 暂停 '+pausedN:'')+nextTxt+'</div>';
+  return head+rows;
+}
+function fetchAutomations(){
+  return fetchJSON("/api/v1/automations").then(function(r){
+    if(r.json&&r.json.ok&&r.json.data){
+      D.automations=r.json.data.automations||[];
+      D.automationsSourceOk=r.json.data.source_ok!==false;
+    }else{D.automationsSourceOk=false;}
+  }).catch(function(){D.automationsSourceOk=false;});
+}
+function startAutomationsRefresh(){
+  // 回前台立即刷; 可见时每 30s 刷 (Kanban SSE 完全不动)
+  document.addEventListener("visibilitychange",function(){
+    if(!document.hidden)fetchAutomations().then(renderOverviewSafe);
+  });
+  setInterval(function(){
+    if(!document.hidden)fetchAutomations().then(renderOverviewSafe);
+  },30000);
+}
+function renderOverviewSafe(){try{renderOverview();}catch(e){}}
+
 function renderOverview(){
   var counts={};D.tasks.forEach(function(t){counts[t.status]=(counts[t.status]||0)+1;});
   var st=document.getElementById("ovStats");
@@ -1296,12 +1376,34 @@ function renderOverview(){
       '<div class="meta" title="公式: 完成 '+s.done+' / 未归档 '+activeTotal+'">'+pm+'</div></div>';
   }).join("")||'<div class="card" style="color:var(--text-3)">暂无项目</div>';
 
-  // attention: blocked only
-  var att=D.tasks.filter(function(t){return t.status==="blocked";});
+  // attention: blocked + ready未指派 + 自动化异常 (completed/paused 不进需关注)
+  var att=[];
+  D.tasks.filter(function(t){return t.status==="blocked";}).forEach(function(t){
+    att.push('<button class="wl-card" data-task="'+esc(t.id)+'" style="text-align:left;width:100%;cursor:pointer">'+
+      badge(t.status)+'<span class="n" style="color:var(--text)">'+esc(t.title.slice(0,34))+'</span>'+
+      '<span class="c">'+esc(CN[t.assignee]||t.assignee||"未指派")+'</span></button>');
+  });
+  D.tasks.filter(function(t){return t.status==="ready"&&!t.assignee;}).forEach(function(t){
+    att.push('<button class="wl-card" data-task="'+esc(t.id)+'" style="text-align:left;width:100%;cursor:pointer">'+
+      badge(t.status)+'<span class="n" style="color:var(--text)">'+esc(t.title.slice(0,34))+'</span>'+
+      '<span class="c" style="color:var(--st-running)">就绪但未指派</span></button>');
+  });
+  (D.automations||[]).forEach(function(a){
+    if(!a.has_issue)return;
+    att.push('<div class="wl-card"><span class="pill-done" style="color:var(--st-blocked);border-color:color-mix(in srgb,var(--st-blocked) 35%,transparent);background:color-mix(in srgb,var(--st-blocked) 10%,transparent)">异常</span>'+
+      '<span class="n" style="color:var(--text)">'+esc(a.name.slice(0,34))+'</span>'+
+      '<span class="c" style="color:var(--st-blocked);max-width:55%">'+esc(a.issue_summary)+'</span></div>');
+  });
   var attEl=document.getElementById("ovAttention");
-  attEl.innerHTML=att.length?
-    att.map(function(t){return '<div class="wl-card" style="color:var(--st-blocked)">'+badge(t.status)+'<span class="n" style="color:var(--text)">'+esc(t.title.slice(0,34))+'</span></div>';}).join(""):
-    '<div class="empty-state" style="padding:12px 16px;text-align:left">未发现需要关注的 Kanban 事项</div>';
+  attEl.innerHTML=att.length?att.join(""):
+    '<div class="empty-state" style="padding:12px 16px;text-align:left">当前没有需要你处理的事项</div>';
+  attEl.querySelectorAll("[data-task]").forEach(function(el){
+    el.addEventListener("click",function(){openDetail(el.getAttribute("data-task"));});
+  });
+
+  // automations compact block (右侧栏; source 故障如实提示, 不伪装成 0 个)
+  var auEl=document.getElementById("ovAutomations");
+  auEl.innerHTML=renderAutomations();
 
   // workload: 头像+姓名+岗位+统计 (按真实状态: running=执行中, done=完成; archived 不混入完成统计)
   var wl=Object.keys(byAssign).sort(function(a,b){return byAssign[b]-byAssign[a];}).map(function(a){
