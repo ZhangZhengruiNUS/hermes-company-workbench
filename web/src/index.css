@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
-/* ============ Aurora Glass Design Tokens ============ */
+/* ============ Aurora Glass Design Tokens (v2 Premium Control Surface) ============ */
 :root {
-  /* 深色主题 (默认) */
-  --bg-0: #06101f;
-  --bg-1: #08162a;
-  --bg-2: #0b1b33;
+  /* 深色主题 (默认) — 深海军蓝基底 */
+  --bg-0: #050d1a;
+  --bg-1: #071426;
+  --bg-2: #09182d;
 
   --surface-1: rgba(15, 29, 53, 0.62);
   --surface-2: rgba(20, 37, 66, 0.72);
@@ -29,7 +29,7 @@
   --status-red: #ff6a72;
   --status-blue: #4fc4ff;
 
-  --aurora-intensity: 0.30;
+  --aurora-intensity: 0.28;
 
   --radius-ctl: 11px;
   --radius-card: 16px;
@@ -55,7 +55,7 @@
   --text-2: #4a5a75;
   --text-3: #7a89a2;
 
-  --aurora-intensity: 0.22;
+  --aurora-intensity: 0.2;
 }
 
 @theme inline {
@@ -72,7 +72,7 @@
   --color-text-2: var(--text-2);
   --color-text-3: var(--text-3);
   --color-accent-blue: var(--accent-blue);
-  --color-accent-violet: var(--accent-violet);
+  --color-accent-violet: --accent-violet;
   --color-accent-cyan: var(--accent-cyan);
   --color-status-green: var(--status-green);
   --color-status-orange: var(--status-orange);
@@ -95,43 +95,111 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ============ Glass 材质 ============ */
-.glass-1 {
+/* ============ Surface A — Floating Command Glass ============ */
+/* Topbar / Sidebar / Search / Drawer Header: 高透明+强blur+细亮边+顶部折射高光 */
+.cmd-glass {
+  position: relative;
   background: var(--surface-1);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid var(--border-soft);
-}
-.glass-2 {
-  background: var(--surface-2);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
   border: 1px solid var(--border-mid);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 40px -18px rgba(0, 0, 0, 0.55);
 }
-.glass-solid {
-  background: var(--surface-solid);
-  border: 1px solid var(--border-soft);
+:root.light .cmd-glass {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 10px 32px -20px rgba(30, 60, 120, 0.3);
 }
-/* 内容密集区: 更实的底, 保证阅读 */
-.glass-read {
-  background: var(--surface-solid-2);
-  border: 1px solid var(--border-soft);
+.cmd-glass::before {
+  /* 左上折射高光 */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, transparent 32%);
+  pointer-events: none;
 }
 
-/* hover 抬升 (仅桌面指针) */
+/* ============ Surface B — Prism Card ============ */
+/* 大指标/重点项目/自动化/需要关注: 深色稳定底+左上→右下 spectral edge */
+.prism-card {
+  position: relative;
+  background: var(--surface-solid-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  transition: transform 160ms ease, border-color 160ms ease;
+  overflow: hidden;
+}
+.prism-card::before {
+  /* 左上/右下 极淡 spectral edge */
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(110, 168, 255, 0.35) 0%,
+    rgba(148, 124, 255, 0.18) 18%,
+    transparent 38%,
+    transparent 62%,
+    rgba(69, 215, 206, 0.16) 84%,
+    rgba(148, 124, 255, 0.3) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+.prism-card::after {
+  /* cursor prism highlight — hover 时 5-10% 亮度 */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 0%),
+    rgba(110, 168, 255, 0.09),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 250ms ease;
+  pointer-events: none;
+}
 @media (hover: hover) {
-  .glass-hover {
-    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
-  }
-  .glass-hover:hover {
-    transform: translateY(-2px);
-    border-color: var(--border-mid);
-    box-shadow: 0 6px 24px -12px rgba(0, 0, 0, 0.45);
-  }
+  .prism-card:hover { transform: translateY(-2px); }
+  .prism-card:hover::before { opacity: 1; }
+  .prism-card:hover::after { opacity: 1; }
 }
-:root.light .glass-hover:hover {
-  box-shadow: 0 6px 20px -12px rgba(30, 60, 120, 0.25);
+
+/* ============ Surface C — Quiet Data Surface ============ */
+/* 任务表格/长文本/Events: 更实更少 blur */
+.quiet-surface {
+  background: var(--surface-solid-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
 }
+
+/* ============ Surface D — Status Capsule ============ */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-1);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; }
 
 /* focus-visible */
 :focus-visible {
@@ -140,72 +208,91 @@ body {
   border-radius: 6px;
 }
 
-/* ============ Aurora 背景 ============ */
+/* ============ 背景: 四层 (无规则网格) ============ */
 .aurora-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
+  /* Layer A: 基底 */
   background:
     radial-gradient(120% 90% at 80% -10%, var(--bg-2) 0%, transparent 60%),
     var(--bg-0);
 }
+
+/* Layer B: 三块大尺度不规则极光 — 大尺寸/多组 radial 叠加避免圆形 blob 感 */
 .aurora-blob {
   position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
+  filter: blur(110px);
   will-change: transform, opacity;
   opacity: var(--aurora-intensity);
 }
 .aurora-blob.blue {
-  width: 55vw; height: 55vw;
-  left: -12vw; top: -18vh;
-  background: radial-gradient(circle, #3f6fd9 0%, transparent 70%);
-  animation: drift-a 14s ease-in-out infinite alternate;
+  width: 90vw; height: 70vh;
+  left: -25vw; top: -30vh;
+  background:
+    radial-gradient(ellipse 60% 50% at 35% 60%, #3f6fd9 0%, transparent 70%),
+    radial-gradient(ellipse 45% 60% at 70% 30%, #2a4fb0 0%, transparent 75%);
+  animation: drift-a 18s ease-in-out infinite alternate;
 }
 .aurora-blob.violet {
-  width: 48vw; height: 48vw;
-  right: -14vw; top: 4vh;
-  background: radial-gradient(circle, #6a4fd0 0%, transparent 70%);
-  animation: drift-b 17s ease-in-out infinite alternate;
+  width: 75vw; height: 65vh;
+  right: -30vw; top: -5vh;
+  background:
+    radial-gradient(ellipse 55% 55% at 40% 40%, #6a4fd0 0%, transparent 72%),
+    radial-gradient(ellipse 40% 45% at 75% 70%, #8a5fd9 0%, transparent 70%);
+  animation: drift-b 22s ease-in-out infinite alternate;
 }
 .aurora-blob.cyan {
-  width: 50vw; height: 50vw;
-  left: 22vw; bottom: -26vh;
-  background: radial-gradient(circle, #1e8f8a 0%, transparent 70%);
-  animation: drift-c 15s ease-in-out infinite alternate;
+  width: 80vw; height: 60vh;
+  left: 15vw; bottom: -35vh;
+  background:
+    radial-gradient(ellipse 55% 50% at 45% 50%, #1e8f8a 0%, transparent 72%),
+    radial-gradient(ellipse 40% 40% at 70% 40%, #2ab5a8 0%, transparent 70%);
+  animation: drift-c 20s ease-in-out infinite alternate;
 }
 @keyframes drift-a {
   from { transform: translate(0, 0) scale(1); }
-  to   { transform: translate(24px, 16px) scale(1.06); }
+  to   { transform: translate(28px, 18px) scale(1.05); }
 }
 @keyframes drift-b {
   from { transform: translate(0, 0) scale(1.02); }
-  to   { transform: translate(-20px, 22px) scale(0.96); }
+  to   { transform: translate(-24px, 22px) scale(0.97); }
 }
 @keyframes drift-c {
   from { transform: translate(0, 0) scale(0.98); }
-  to   { transform: translate(-16px, -20px) scale(1.07); }
+  to   { transform: translate(-18px, -22px) scale(1.06); }
 }
 
-/* 极淡 grid 纹理 */
-.aurora-grid {
+/* Layer C: 极淡 grain/noise (SVG feTurbulence 伪元素) */
+.aurora-noise {
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(var(--border-soft) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(70% 60% at 50% 30%, rgba(0,0,0,0.5), transparent);
-  -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, rgba(0,0,0,0.5), transparent);
-  opacity: 0.35;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+:root.light .aurora-noise { opacity: 0.035; }
+
+/* Layer D: 局部 spectral haze — 顶部命令栏后方, 不平均铺满 */
+.spectral-haze {
+  position: absolute;
+  top: -8vh;
+  left: 20%;
+  width: 60%;
+  height: 42vh;
+  background:
+    radial-gradient(ellipse 50% 60% at 30% 30%, rgba(110, 168, 255, 0.10), transparent 70%),
+    radial-gradient(ellipse 40% 50% at 70% 40%, rgba(148, 124, 255, 0.08), transparent 70%),
+    radial-gradient(ellipse 35% 40% at 50% 70%, rgba(69, 215, 206, 0.06), transparent 70%);
+  filter: blur(60px);
+  opacity: var(--aurora-intensity);
 }
 
 /* 手机: 极光减弱 */
 @media (max-width: 768px) {
-  .aurora-blob { filter: blur(64px); opacity: calc(var(--aurora-intensity) * 0.6); }
-  .aurora-grid { display: none; }
+  .aurora-blob { filter: blur(72px); opacity: calc(var(--aurora-intensity) * 0.6); }
+  .spectral-haze { display: none; }
 }
 
 /* Reduced motion: 全部静止 */
@@ -227,27 +314,31 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-focus); }
 
-/* 状态 pill */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  line-height: 1;
-  padding: 4px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  white-space: nowrap;
-}
-.pill .dot { width: 6px; height: 6px; border-radius: 50%; }
-
-/* live chip 绿点 pulse */
+/* live chip 绿点 pulse (仅 live 态, 低频) */
 .live-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--status-green);
-  animation: live-pulse 2.4s ease-in-out infinite;
+  animation: live-pulse 2.6s ease-in-out infinite;
 }
 @keyframes live-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(64, 214, 155, 0.45); }
   50%      { box-shadow: 0 0 0 5px rgba(64, 214, 155, 0); }
+}
+
+/* 最新事件 node ring (一次 600ms 后静止) */
+@keyframes event-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(69, 215, 206, 0.5); }
+  100% { box-shadow: 0 0 0 8px rgba(69, 215, 206, 0); }
+}
+.event-node-fresh { animation: event-ring 0.6s ease-out 1; }
+
+/* SYSTEM IDLE 装饰 waveform */
+.idle-wave {
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--border-mid) 0 2px,
+    transparent 2px 14px
+  );
+  opacity: 0.6;
 }

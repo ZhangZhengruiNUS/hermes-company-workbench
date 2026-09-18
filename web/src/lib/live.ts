@@ -7,6 +7,9 @@ const SSE_PATH = "/api/v1/stream";
 const POLL_MS = 5000;
 const MAX_RETRY = 5;
 
+// 同源绝对 URL (SSE 亦然)
+const sseUrl = () => window.location.origin + SSE_PATH;
+
 export function useLiveFeed(onData: () => void) {
   const [state, setState] = useState<LiveState>("reconnecting");
   const [lastSnap, setLastSnap] = useState<Date | null>(null);
@@ -38,7 +41,7 @@ export function useLiveFeed(onData: () => void) {
 
     const connect = () => {
       if (closed) return;
-      es = new EventSource(SSE_PATH);
+      es = new EventSource(sseUrl());
       esRef.current = es;
 
       es.onopen = () => {

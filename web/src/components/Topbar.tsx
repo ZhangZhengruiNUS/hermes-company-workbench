@@ -1,4 +1,4 @@
-// Topbar — 页面标题 / Live chip / 搜索 / 主题切换 / 编辑锁状态
+// Topbar — Floating Command Bar: 8-12px 呼吸空间, command palette 搜索, 圆形玻璃主题按钮
 import { Moon, Sun, Search, Lock, LockOpen } from "lucide-react";
 import type { LiveState } from "../lib/live";
 import type { ViewId } from "./Sidebar";
@@ -31,13 +31,19 @@ interface Props {
 
 export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search, onSearch, onOpenMobileNav }: Props) {
   return (
-    <header className="glass-1 rounded-[var(--radius-lg)] flex items-center gap-3 px-4 py-2.5 mb-3 sticky top-3 z-30">
-      {/* 手机菜单按钮 */}
+    <header className="cmd-glass rounded-[var(--radius-lg)] flex items-center gap-3 px-4 py-2.5 mb-3 sticky top-3 z-30">
+      {/* 顶部微弱 white highlight */}
+      <div
+        aria-hidden
+        className="absolute top-0 left-[10%] right-[10%] h-px pointer-events-none"
+        style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent)" }}
+      />
+
       <button
         className="md:hidden text-[20px] leading-none min-w-[44px] min-h-[44px] flex items-center justify-center"
         onClick={onOpenMobileNav}
         aria-label="打开导航菜单"
-        style={{ color: "var(--text-2)" }}
+        style={{ color: "var(--text-2)", background: "transparent", border: "none" }}
       >
         ☰
       </button>
@@ -46,12 +52,11 @@ export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search
         {TITLES[view]}
       </h1>
 
-      {/* Live chip */}
+      {/* Live chip — 精致 capsule */}
       <span
         className="pill"
         style={{
           color: liveState === "live" ? "var(--status-green)" : liveState === "error" ? "var(--status-red)" : "var(--status-orange)",
-          borderColor: "var(--border-soft)",
         }}
         title={`实时连接状态: ${LIVE_TEXT[liveState]}`}
       >
@@ -61,26 +66,27 @@ export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search
 
       <div className="flex-1" />
 
-      {/* 搜索 */}
+      {/* 搜索 — command palette 风格 */}
       <div className="relative hidden sm:block">
-        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="搜索任务标题 / ID"
           aria-label="搜索任务"
-          className="rounded-[var(--radius-ctl)] pl-8 pr-3 py-2 text-[13px] w-[210px] outline-none transition-colors"
+          className="rounded-[var(--radius-ctl)] pl-8 pr-3 py-2 text-[13px] w-[220px] outline-none transition-colors"
           style={{
-            background: "var(--surface-solid-2)",
+            background: "rgba(0,0,0,0.18)",
             border: "1px solid var(--border-soft)",
             color: "var(--text-1)",
+            boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
           }}
           onFocus={(e) => (e.target.style.borderColor = "var(--border-focus)")}
           onBlur={(e) => (e.target.style.borderColor = "var(--border-soft)")}
         />
       </div>
 
-      {/* 编辑锁状态 */}
+      {/* 锁状态独立 capsule */}
       <span
         className="pill"
         style={{ color: unlocked ? "var(--status-green)" : "var(--text-3)" }}
@@ -90,14 +96,20 @@ export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search
         {unlocked ? "已解锁" : "已锁定"}
       </span>
 
-      {/* 主题切换 */}
+      {/* 主题切换 — 圆形玻璃控制 */}
       <button
         onClick={onToggleTheme}
         aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
-        className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-[var(--radius-ctl)] transition-colors"
-        style={{ color: "var(--text-2)", background: "transparent", border: "none", cursor: "pointer" }}
+        className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
+        style={{
+          color: "var(--text-2)",
+          background: "var(--surface-1)",
+          border: "1px solid var(--border-soft)",
+          cursor: "pointer",
+          backdropFilter: "blur(8px)",
+        }}
       >
-        {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+        {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
       </button>
     </header>
   );

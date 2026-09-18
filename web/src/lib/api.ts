@@ -45,14 +45,19 @@ async function handle(resp: Response) {
   return body.data;
 }
 
+// 同源绝对 URL — 避免 URL 嵌入凭据时相对路径 fetch 继承凭据报错
+const ORIGIN = window.location.origin;
+const U = (p: string) => ORIGIN + p;
+
 export const api = {
   async get<T = unknown>(path: string): Promise<T> {
-    const r = await fetch(path, { headers: authHeaders() });
+    const r = await fetch(U(path), { headers: authHeaders(), credentials: "same-origin" });
     return handle(r) as Promise<T>;
   },
   async post<T = unknown>(path: string, data?: unknown): Promise<T> {
-    const r = await fetch(path, {
+    const r = await fetch(U(path), {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(data ?? {}),
     });
