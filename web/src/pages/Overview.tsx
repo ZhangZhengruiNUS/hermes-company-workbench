@@ -29,25 +29,37 @@ function ExecutiveStrip({ counts, workN, projN }: { counts: Record<string, numbe
     { label: "项目", value: projN, color: "var(--accent-violet)" },
   ];
   return (
-    <PrismCard className="cmd-glass rounded-[var(--radius-lg)]" >
-      <div className="flex divide-x" style={{ borderTop: "none" }}>
-        {cells.map((c, i) => (
+    <div className="cmd-glass rounded-[var(--radius-lg)] relative overflow-hidden">
+      {/* hero 背景微光晕 */}
+      <div aria-hidden className="absolute inset-0 pointer-events-none" style={{
+        background: "radial-gradient(ellipse 40% 90% at 15% 0%, rgba(110,168,255,0.14), transparent 60%), radial-gradient(ellipse 35% 80% at 85% 100%, rgba(148,124,255,0.12), transparent 60%)",
+      }} />
+      <div className="relative flex divide-x">
+        {cells.map((c) => (
           <div
             key={c.label}
-            className={`flex-1 px-5 py-4 transition-colors duration-200 hover:bg-[rgba(110,168,255,0.05)] ${i === 0 ? "" : ""}`}
+            className="flex-1 px-6 py-5 transition-colors duration-200 hover:bg-[rgba(110,168,255,0.06)]"
             style={{ borderColor: "var(--border-soft)" }}
           >
             <div className="flex items-center gap-1.5">
-              <span className="w-1 h-1 rounded-full" style={{ background: c.color, boxShadow: `0 0 6px ${c.color}55` }} />
-              <span className="text-[11.5px]" style={{ color: "var(--text-3)" }}>{c.label}</span>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${c.color}88` }} />
+              <span className="text-[11.5px] tracking-wide" style={{ color: "var(--text-3)" }}>{c.label}</span>
             </div>
-            <div className="text-[30px] font-semibold leading-tight tabular-nums" style={{ color: c.color }}>
-              {c.value}
+            <div className="relative">
+              <div aria-hidden className="absolute inset-0 pointer-events-none" style={{
+                background: `radial-gradient(closest-side, ${c.color}1f, transparent)`,
+              }} />
+              <div
+                className="relative text-[34px] font-semibold leading-tight tabular-nums mt-0.5"
+                style={{ color: c.color, textShadow: `0 0 28px ${c.color}66, 0 0 60px ${c.color}33` }}
+              >
+                {c.value}
+              </div>
             </div>
           </div>
         ))}
       </div>
-    </PrismCard>
+    </div>
   );
 }
 

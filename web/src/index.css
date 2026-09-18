@@ -29,7 +29,7 @@
   --status-red: #ff6a72;
   --status-blue: #4fc4ff;
 
-  --aurora-intensity: 0.28;
+  --aurora-intensity: 0.85;
 
   --radius-ctl: 11px;
   --radius-card: 16px;
@@ -55,7 +55,7 @@
   --text-2: #4a5a75;
   --text-3: #7a89a2;
 
-  --aurora-intensity: 0.2;
+  --aurora-intensity: 0.55;
 }
 
 @theme inline {
@@ -126,35 +126,38 @@ body {
 /* 大指标/重点项目/自动化/需要关注: 深色稳定底+左上→右下 spectral edge */
 .prism-card {
   position: relative;
-  background: var(--surface-solid-2);
-  border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
-  transition: transform 160ms ease, border-color 160ms ease;
+  transition: transform 160ms ease;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 32px -16px rgba(0,0,0,0.5);
 }
-.prism-card::before {
-  /* 左上/右下 极淡 spectral edge */
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    rgba(110, 168, 255, 0.35) 0%,
-    rgba(148, 124, 255, 0.18) 18%,
-    transparent 38%,
-    transparent 62%,
-    rgba(69, 215, 206, 0.16) 84%,
-    rgba(148, 124, 255, 0.3) 100%
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  opacity: 0.55;
-  pointer-events: none;
-  transition: opacity 200ms ease;
+/* Prism Card: 半透明玻璃底(极光可透出) + 高对比方向性渐变描边 */
+.prism-card {
+  border: 1px solid transparent;
+  backdrop-filter: blur(16px) saturate(145%);
+  -webkit-backdrop-filter: blur(16px) saturate(145%);
+  background:
+    linear-gradient(rgba(13, 22, 40, 0.68), rgba(13, 22, 40, 0.68)) padding-box,
+    linear-gradient(
+      135deg,
+      rgba(140, 110, 255, 0.75) 0%,
+      rgba(130, 130, 200, 0.10) 45%,
+      rgba(64, 235, 235, 0.70) 100%
+    ) border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 32px -16px rgba(0, 0, 0, 0.5),
+    0 0 12px -4px rgba(96, 140, 255, 0.25);
+}
+:root.light .prism-card {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.72)) padding-box,
+    linear-gradient(
+      135deg,
+      rgba(110, 90, 230, 0.50) 0%,
+      rgba(130, 140, 180, 0.10) 45%,
+      rgba(27, 170, 160, 0.50) 100%
+    ) border-box;
 }
 .prism-card::after {
   /* cursor prism highlight — hover 时 5-10% 亮度 */
@@ -164,7 +167,7 @@ body {
   border-radius: inherit;
   background: radial-gradient(
     260px circle at var(--mx, 50%) var(--my, 0%),
-    rgba(110, 168, 255, 0.09),
+    rgba(110, 168, 255, 0.20),
     transparent 65%
   );
   opacity: 0;
@@ -229,27 +232,27 @@ body {
   opacity: var(--aurora-intensity);
 }
 .aurora-blob.blue {
-  width: 90vw; height: 70vh;
-  left: -25vw; top: -30vh;
+  width: 95vw; height: 75vh;
+  left: -22vw; top: 18vh;
   background:
-    radial-gradient(ellipse 60% 50% at 35% 60%, #3f6fd9 0%, transparent 70%),
-    radial-gradient(ellipse 45% 60% at 70% 30%, #2a4fb0 0%, transparent 75%);
+    radial-gradient(ellipse 60% 50% at 35% 60%, #4f86ff 0%, transparent 68%),
+    radial-gradient(ellipse 45% 60% at 70% 30%, #3a63d9 0%, transparent 72%);
   animation: drift-a 18s ease-in-out infinite alternate;
 }
 .aurora-blob.violet {
   width: 75vw; height: 65vh;
-  right: -30vw; top: -5vh;
+  right: -30vw; top: 10vh;
   background:
-    radial-gradient(ellipse 55% 55% at 40% 40%, #6a4fd0 0%, transparent 72%),
-    radial-gradient(ellipse 40% 45% at 75% 70%, #8a5fd9 0%, transparent 70%);
+    radial-gradient(ellipse 55% 55% at 40% 40%, #7e5bff 0%, transparent 70%),
+    radial-gradient(ellipse 40% 45% at 75% 70%, #9d6bff 0%, transparent 68%);
   animation: drift-b 22s ease-in-out infinite alternate;
 }
 .aurora-blob.cyan {
-  width: 80vw; height: 60vh;
-  left: 15vw; bottom: -35vh;
+  width: 85vw; height: 65vh;
+  right: -20vw; bottom: -28vh;
   background:
-    radial-gradient(ellipse 55% 50% at 45% 50%, #1e8f8a 0%, transparent 72%),
-    radial-gradient(ellipse 40% 40% at 70% 40%, #2ab5a8 0%, transparent 70%);
+    radial-gradient(ellipse 55% 50% at 45% 50%, #1fb5aa 0%, transparent 70%),
+    radial-gradient(ellipse 40% 40% at 70% 40%, #2ee0d0 0%, transparent 68%);
   animation: drift-c 20s ease-in-out infinite alternate;
 }
 @keyframes drift-a {
@@ -269,10 +272,10 @@ body {
 .aurora-noise {
   position: absolute;
   inset: 0;
-  opacity: 0.05;
+  opacity: 0.09;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-:root.light .aurora-noise { opacity: 0.035; }
+:root.light .aurora-noise { opacity: 0.06; }
 
 /* Layer D: 局部 spectral haze — 顶部命令栏后方, 不平均铺满 */
 .spectral-haze {
@@ -282,9 +285,9 @@ body {
   width: 60%;
   height: 42vh;
   background:
-    radial-gradient(ellipse 50% 60% at 30% 30%, rgba(110, 168, 255, 0.10), transparent 70%),
-    radial-gradient(ellipse 40% 50% at 70% 40%, rgba(148, 124, 255, 0.08), transparent 70%),
-    radial-gradient(ellipse 35% 40% at 50% 70%, rgba(69, 215, 206, 0.06), transparent 70%);
+    radial-gradient(ellipse 50% 60% at 25% 25%, rgba(126, 91, 255, 0.30), transparent 70%),
+    radial-gradient(ellipse 40% 50% at 85% 45%, rgba(46, 224, 208, 0.22), transparent 70%),
+    radial-gradient(ellipse 45% 45% at 20% 85%, rgba(79, 134, 255, 0.26), transparent 70%);
   filter: blur(60px);
   opacity: var(--aurora-intensity);
 }
