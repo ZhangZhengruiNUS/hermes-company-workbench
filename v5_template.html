@@ -418,7 +418,7 @@ html[data-rt="true"] .drawer{background:var(--surface)}
     <button class="nav-item" data-view="team"><span class="ico">◫</span>团队<span class="cnt" id="nTeam"></span></button>
     <button class="nav-item" data-view="projects"><span class="ico">◨</span>项目<span class="cnt" id="nProj"></span></button>
     <button class="nav-item" data-view="activity"><span class="ico">≡</span>活动</button>
-    <div class="side-foot" id="sideFoot"><span class="st-dot" id="footDot"></span><b id="footMode">连接中…</b><br>更新时间 <span class="mono" id="footSnap"></span><br><span id="footSub">正在建立实时连接</span><br><span id="wbVer" style="opacity:.7"></span></div>
+    <div class="side-foot" id="sideFoot"><span class="st-dot" id="footDot"></span><b id="footMode">连接中…</b><br>更新时间 <span class="mono" id="footSnap"></span><br><span id="footSub">正在建立实时连接</span><br><span id="wbVer" style="opacity:.7"></span><br><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener" style="opacity:.6;font-size:11px">蜀ICP备2026028729号-3</a></div>
   </nav>
 
   <div class="main">
@@ -1528,7 +1528,7 @@ var currentMember=null;
 /* ---- 写锁状态 ---- */
 var WRITE_TOKEN=sessionStorage.getItem("wb_wtoken")||"";
 var WRITE_UNLOCKED=false;
-function wbAuthHeaders(){return WRITE_TOKEN?{"Authorization":"Bearer "+WRITE_TOKEN}:{};}
+function wbAuthHeaders(){/* 写token走独立头, 不再占用 Authorization(留给 nginx Basic Auth, 同源请求浏览器自动携带) */return WRITE_TOKEN?{"X-Workbench-Write-Token":WRITE_TOKEN}:{};}
 function fetchJSON(url,opt){
   opt=opt||{};
   opt.headers=Object.assign({},opt.headers||{},wbAuthHeaders());
