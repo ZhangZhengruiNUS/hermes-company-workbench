@@ -1,5 +1,5 @@
 // Topbar — Floating Command Bar: 8-12px 呼吸空间, command palette 搜索, 圆形玻璃主题按钮
-import { Moon, Sun, Search, Lock, LockOpen } from "lucide-react";
+import { Moon, Sun, Search, Lock, LockOpen, Menu } from "lucide-react";
 import type { LiveState } from "../lib/live";
 import type { ViewId } from "./Sidebar";
 
@@ -31,7 +31,7 @@ interface Props {
 
 export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search, onSearch, onOpenMobileNav }: Props) {
   return (
-    <header className="cmd-glass rounded-[var(--radius-lg)] flex items-center gap-3 px-4 py-2.5 mb-3 sticky top-3 z-30">
+    <header className="cmd-glass rounded-[var(--radius-lg)] flex items-center gap-3 px-4 py-2.5 mb-5 sticky top-3 z-30">
       {/* 顶部微弱 white highlight */}
       <div
         aria-hidden
@@ -45,7 +45,7 @@ export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search
         aria-label="打开导航菜单"
         style={{ color: "var(--text-2)", background: "transparent", border: "none" }}
       >
-        ☰
+        <Menu size={20} />
       </button>
 
       <h1 className="text-[15px] font-semibold m-0" style={{ color: "var(--text-1)" }}>
