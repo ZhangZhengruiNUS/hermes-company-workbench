@@ -43,10 +43,13 @@ def _curl_api(method, path, body=None):
            "-H", "Accept: application/vnd.github+json",
            "-H", "User-Agent: workbench-push"]
     if body is not None:
+        # blob 内容可达 MB 级, 不能放 argv (E2BIG) → 走 stdin
         cmd += ["-H", "Content-Type: application/json",
-                "-d", json.dumps(body)]
-    cmd.append(f"{API}/{path}")
-    r = subprocess.run(cmd, capture_output=True, timeout=300)
+                "--data-binary", "@-"]
+        r = subprocess.run(cmd + [f"{API}/{path}"], input=json.dumps(body).encode(),
+                           capture_output=True, timeout=300)
+    else:
+        r = subprocess.run(cmd, capture_output=True, timeout=300)
     if r.returncode != 0 and not r.stdout:
         raise ConnectionError(f"curl exit {r.returncode}: {r.stderr.decode()[:200]}")
     try:
