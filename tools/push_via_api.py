@@ -49,7 +49,7 @@ def _curl_api(method, path, body=None):
         r = subprocess.run(cmd + [f"{API}/{path}"], input=json.dumps(body).encode(),
                            capture_output=True, timeout=300)
     else:
-        r = subprocess.run(cmd, capture_output=True, timeout=300)
+        r = subprocess.run(cmd + [f"{API}/{path}"], capture_output=True, timeout=300)
     if r.returncode != 0 and not r.stdout:
         raise ConnectionError(f"curl exit {r.returncode}: {r.stderr.decode()[:200]}")
     try:
