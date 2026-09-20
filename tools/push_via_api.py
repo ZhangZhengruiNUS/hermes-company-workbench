@@ -18,7 +18,7 @@ api.github.com 可达, 故用 Git Data API (blob→tree→commit→ref) 实现�
 
 依赖: 无第三方包, 需本机 git 与环境变量 GITHUB_TOKEN。
 """
-import base64, json, os, subprocess, sys, urllib.request, urllib.error
+import base64, http.client, json, os, subprocess, sys, urllib.request, urllib.error
 
 REPO = os.environ.get("PUSH_REPO", "ZhangZhengruiNUS/hermes-company-workbench")
 BRANCH = os.environ.get("PUSH_BRANCH", "main")
@@ -44,6 +44,9 @@ def api(method, path, body=None):
             return json.loads(r.read().decode() or "{}")
     except urllib.error.HTTPError as e:
         return json.loads(e.read().decode() or "{}")
+    except (urllib.error.URLError, http.client.IncompleteRead, ConnectionError, TimeoutError) as e:
+        # 网络/截断类瞬时错误: 报告并退出, 不静默吞掉 (blob 级幂等, 重跑安全)
+        sys.exit(f"ERROR: transient network failure on {method} {path}: {type(e).__name__}: {e} — rerun to retry")
 
 def run(*a):
     return subprocess.run(a, capture_output=True)
