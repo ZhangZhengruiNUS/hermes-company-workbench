@@ -34,36 +34,35 @@ if "/" not in REPO or REPO.startswith("/") or REPO.endswith("/") or len(REPO.spl
              f"No API calls were made.")
 FORCE = "--force" in sys.argv
 
+def _curl_api(method, path, body=None):
+    # urllib 在本链路对 ~1MB+ 响应必截断(identity/gzip 皆然); curl --compressed 实测稳定。
+    # curl 仅作传输层, 逻辑与 api() 一致: 4xx/5xx 返回解析后的 JSON dict。
+    cmd = ["curl", "-sS", "--compressed", "--max-time", "180",
+           "-X", method,
+           "-H", f"Authorization: token {TOKEN}",
+           "-H", "Accept: application/vnd.github+json",
+           "-H", "User-Agent: workbench-push"]
+    if body is not None:
+        cmd += ["-H", "Content-Type: application/json",
+                "-d", json.dumps(body)]
+    cmd.append(f"{API}/{path}")
+    r = subprocess.run(cmd, capture_output=True, timeout=300)
+    if r.returncode != 0 and not r.stdout:
+        raise ConnectionError(f"curl exit {r.returncode}: {r.stderr.decode()[:200]}")
+    try:
+        return json.loads(r.stdout.decode() or "{}")
+    except json.JSONDecodeError:
+        # 可能是截断; 抛出让上层重试
+        raise ConnectionError(f"truncated/invalid JSON ({len(r.stdout)} bytes)")
+
 def api(method, path, body=None, tries=4):
-    # 大 blob 响应(~2MB JSON)在本机链路会被 TCP 截断 → IncompleteRead/JSONDecodeError。
-    # 对策: 显式 Accept-Encoding: gzip (实测 identity 必截断, gzip 3/3 稳定) +
-    # 分块读 + 短重试 (GET 幂等, POST blob 幂等; 4 次内实测可成功)。
+    # 大 blob 响应(~1-2MB JSON)在本机链路被 TCP 截断 → urllib/requests 均 IncompleteRead。
+    # 对策: curl --compressed 传输(实测稳定), 失败短重试 (GET/POST blob 均幂等)。
     last = None
     for attempt in range(tries):
-        req = urllib.request.Request(f"{API}/{path}", method=method,
-            data=json.dumps(body).encode() if body is not None else None,
-            headers={"Authorization": f"token {TOKEN}", "Accept": "application/vnd.github+json",
-                     "Accept-Encoding": "gzip",
-                     "User-Agent": "workbench-push"})
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                chunks = []
-                while True:
-                    c = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
-                    if not c:
-                        break
-                    chunks.append(c)
-                data = b"".join(chunks)
-                if r.headers.get("Content-Encoding") == "gzip":
-                    data = gzip.decompress(data)
-            return json.loads(data.decode() or "{}")
-        except urllib.error.HTTPError as e:
-            err = e.read()
-            if e.headers.get("Content-Encoding") == "gzip":
-                err = gzip.decompress(err)
-            return json.loads(err.decode() or "{}")
-        except (urllib.error.URLError, http.client.IncompleteRead, json.JSONDecodeError,
-                ConnectionError, TimeoutError) as e:
+            return _curl_api(method, path, body)
+        except (ConnectionError, subprocess.TimeoutExpired) as e:
             last = e
             time.sleep(3)
     sys.exit(f"ERROR: transient network failure on {method} {path} after {tries} tries: "
