@@ -159,11 +159,7 @@ def blob_exists_remote(sha):
     r = api("GET", f"git/blobs/{sha}")
     if r.get("sha") == sha:
         return True
-    msg = json.dumps({k: r[k] for k in ("message", "documentation_url") if k in r}, ensure_ascii=False) if r else "empty response"
-    if r.get("message") and "Not Found" in str(r.get("message")):
-        return False
-    # 非 404 的异常响应(限流/网络等)视为不确定 → 上传兜底
-    print(f"  blob probe {sha[:8]}: {msg[:200]}")
+    # GET 404 = 远端不存在 → 需上传。其它异常(限流/网络)也走上传兜底。
     return False
 
 uploaded = reused = 0
