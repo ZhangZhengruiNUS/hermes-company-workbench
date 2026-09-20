@@ -18,7 +18,7 @@ api.github.com 可达, 故用 Git Data API (blob→tree→commit→ref) 实现�
 
 依赖: 无第三方包, 需本机 git 与环境变量 GITHUB_TOKEN。
 """
-import base64, http.client, json, os, subprocess, sys, urllib.request, urllib.error
+import base64, http.client, json, os, subprocess, sys, time, urllib.request, urllib.error
 
 REPO = os.environ.get("PUSH_REPO", "ZhangZhengruiNUS/hermes-company-workbench")
 BRANCH = os.environ.get("PUSH_BRANCH", "main")
@@ -34,19 +34,32 @@ if "/" not in REPO or REPO.startswith("/") or REPO.endswith("/") or len(REPO.spl
              f"No API calls were made.")
 FORCE = "--force" in sys.argv
 
-def api(method, path, body=None):
-    req = urllib.request.Request(f"{API}/{path}", method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={"Authorization": f"token {TOKEN}", "Accept": "application/vnd.github+json",
-                 "User-Agent": "workbench-push"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.loads(r.read().decode() or "{}")
-    except urllib.error.HTTPError as e:
-        return json.loads(e.read().decode() or "{}")
-    except (urllib.error.URLError, http.client.IncompleteRead, ConnectionError, TimeoutError) as e:
-        # 网络/截断类瞬时错误: 报告并退出, 不静默吞掉 (blob 级幂等, 重跑安全)
-        sys.exit(f"ERROR: transient network failure on {method} {path}: {type(e).__name__}: {e} — rerun to retry")
+def api(method, path, body=None, tries=4):
+    # 大 blob 响应(~2MB JSON)在本机链路会被 TCP 截断 → IncompleteRead/JSONDecodeError。
+    # 对策: 分块读 + 短重试 (GET 幂等, POST blob 幂等; 4 次内实测可成功)。
+    last = None
+    for attempt in range(tries):
+        req = urllib.request.Request(f"{API}/{path}", method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={"Authorization": f"token {TOKEN}", "Accept": "application/vnd.github+json",
+                     "User-Agent": "workbench-push"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                chunks = []
+                while True:
+                    c = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
+                    if not c:
+                        break
+                    chunks.append(c)
+            return json.loads(b"".join(chunks).decode() or "{}")
+        except urllib.error.HTTPError as e:
+            return json.loads(e.read().decode() or "{}")
+        except (urllib.error.URLError, http.client.IncompleteRead, json.JSONDecodeError,
+                ConnectionError, TimeoutError) as e:
+            last = e
+            time.sleep(3)
+    sys.exit(f"ERROR: transient network failure on {method} {path} after {tries} tries: "
+             f"{type(last).__name__}: {last} — rerun to retry")
 
 def run(*a):
     return subprocess.run(a, capture_output=True)
