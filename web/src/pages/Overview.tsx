@@ -282,13 +282,19 @@ function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }
         )}
       </section>
 
-      {/* Automation — §2.2: 子源失败如实显示 */}
+      {/* Automation — §2.2: 子源失败如实显示; 有 LKG 缓存时标注 stale, 无历史才显「暂不可用」 */}
       <section>
         <div className="flex items-center gap-2 mb-2.5 px-1">
           <Zap size={13} style={{ color: "var(--accent-cyan)" }} aria-hidden />
           <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>自动化</h2>
+          {sourcesFailed?.automations && automations.length > 0 && (
+            <span className="pill ml-auto" title="子数据源刷新失败，展示上次成功缓存">
+              <span className="dot" style={{ background: "var(--status-orange)" }} />
+              缓存 · 刷新失败
+            </span>
+          )}
         </div>
-        {sourcesFailed?.automations ? (
+        {sourcesFailed?.automations && automations.length === 0 ? (
           <div className="quiet-surface"><EmptyState>⚠ 自动化数据暂不可用</EmptyState></div>
         ) : automations.length === 0 ? (
           <div className="quiet-surface"><EmptyState>暂无自动化任务</EmptyState></div>
@@ -302,6 +308,7 @@ function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }
                 a.next_run ? `下次 ${a.next_run.slice(0, 16).replace("T", " ")}` : "",
                 a.last_status == null ? "未运行过" : a.last_status,
                 a.issue_summary || "",
+                sourcesFailed?.automations ? "缓存数据 · 刷新失败" : "",
               ].filter(Boolean).join(" · ");
               return (
                 <div key={a.name} className="flex items-center gap-2.5 px-4 py-2.5" title={tooltip} style={{ borderBottom: i < Math.min(automations.length, 6) - 1 ? "1px solid var(--border-soft)" : undefined }}>
@@ -327,8 +334,14 @@ function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }
         <div className="flex items-center gap-2 mb-2.5 px-1">
           <Bot size={13} style={{ color: "var(--text-3)" }} aria-hidden />
           <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>团队任务概览</h2>
+          {sourcesFailed?.profiles && profiles.length > 0 && (
+            <span className="pill ml-auto" title="子数据源刷新失败，展示上次成功缓存">
+              <span className="dot" style={{ background: "var(--status-orange)" }} />
+              缓存 · 刷新失败
+            </span>
+          )}
         </div>
-        {sourcesFailed?.profiles ? (
+        {sourcesFailed?.profiles && profiles.length === 0 ? (
           <div className="quiet-surface"><EmptyState>⚠ 成员数据暂不可用</EmptyState></div>
         ) : profiles.length === 0 ? (
           <div className="quiet-surface"><EmptyState>暂无成员数据</EmptyState></div>

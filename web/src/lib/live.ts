@@ -138,6 +138,15 @@ async function fetchBoard(): Promise<boolean> {
 }
 
 // ---- 旧版 parity: onNotify ----
+// evCursor 只能单调递增: 乱序完成的 catchup 不得让游标回退 (§B.1.4)
+function advanceEvCursor(c: number) {
+  if (c > KANBAN_STATE.evCursor) {
+    KANBAN_STATE.evCursor = c;
+    return true;
+  }
+  return false;
+}
+
 async function onNotify(msg: Record<string, unknown>) {
   if (msg.type === "profiles_changed") {
     await fetchBoard();
@@ -152,7 +161,7 @@ async function onNotify(msg: Record<string, unknown>) {
     try {
       const ed = await fetchEventsCatchup(KANBAN_STATE.evCursor);
       if (ed.events.length) {
-        KANBAN_STATE.evCursor = ed.cursor;
+        advanceEvCursor(ed.cursor);
         prependActivities(ed.events);
       }
     } catch (_) { /* silent */ }
@@ -162,7 +171,7 @@ async function onNotify(msg: Record<string, unknown>) {
   try {
     const ed = await fetchEventsCatchup(KANBAN_STATE.evCursor);
     if (ed.events.length) {
-      KANBAN_STATE.evCursor = ed.cursor;
+      advanceEvCursor(ed.cursor);
       prependActivities(ed.events);
     }
   } catch (_) { /* silent */ }
@@ -186,7 +195,7 @@ function startSSE() {
       try {
         const ed = await fetchEventsCatchup(KANBAN_STATE.evCursor);
         if (ed.events.length) {
-          KANBAN_STATE.evCursor = ed.cursor;
+          advanceEvCursor(ed.cursor);
           prependActivities(ed.events);
         }
       } catch (_) { /* silent */ }
@@ -203,7 +212,7 @@ function startSSE() {
           if (wc > KANBAN_STATE.evCursor) {
             fetchEventsCatchup(KANBAN_STATE.evCursor).then((ed) => {
               if (ed.events.length) {
-                KANBAN_STATE.evCursor = ed.cursor;
+                advanceEvCursor(ed.cursor);
                 prependActivities(ed.events);
               }
             }).catch(() => {});
@@ -281,7 +290,7 @@ function ensureStarted(onRefresh: () => void) {
     if (evRes.json && evRes.json.ok && evRes.json.data?.events) {
       const evs = evRes.json.data.events.slice().sort((a: RawEvent, b: RawEvent) => (b.id ?? 0) - (a.id ?? 0));
       ACT_EVENTS = evs.map(rawToEvent);
-      KANBAN_STATE.evCursor = evs.length ? (evs[0].id ?? 0) : 0;
+      advanceEvCursor(evs.length ? (evs[0].id ?? 0) : 0);
       notify();
     }
     if (okB) {

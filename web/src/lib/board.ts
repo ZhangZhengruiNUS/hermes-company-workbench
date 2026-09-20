@@ -1,7 +1,7 @@
 // 板数据 hooks — 并行拉取 board + automations + profiles + events, 合并为前端视图模型
 // 共享数据语义(§2.1/§2.2/§2.3): 完成/归档严格分开, 子数据源失败不得伪装成功, 时间统一时区
-import { useCallback, useEffect, useState } from "react";
-import { api, type BoardData, type Task, type Profile, type Automation, type EventItem, isCurrentWork, ACTIVE_STATUSES, TERMINAL_STATUSES } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type BoardData, type Task, type Profile, type Project, type Automation, type EventItem, isCurrentWork, ACTIVE_STATUSES, TERMINAL_STATUSES } from "./api";
 
 const BOARD_PATH = "/api/v1/board";
 
@@ -95,11 +95,49 @@ export interface BoardState {
 
 export function useBoard() {
   const [state, setState] = useState<BoardState>({ data: null, error: null, sourcesFailed: {}, fetchedAt: null });
+  // 镜像最新 state 到 ref, 供 refresh 在异步完成时读取上一次成功数据(LKG)
+  const stateRef = useRef<BoardState>(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  // 子源响应统一为 { data?: Raw } 包裹或不包裹两种形态
+  function unwrap<T>(v: unknown, fallback: T): T {
+    if (v && typeof v === "object" && "data" in (v as object) && (v as { data?: unknown }).data !== undefined) {
+      return (v as { data: T }).data;
+    }
+    return (v as T) ?? fallback;
+  }
+  // 子源失败判定: HTTP reject 或 显式 source_ok=false (§2.2/B.1.2)
+  function sourceUnusable(r: PromiseSettledResult<unknown>, sourceOkKey: string): boolean {
+    if (r.status !== "fulfilled") return true;
+    const u = unwrap<Record<string, unknown> | null>(r.value, null);
+    if (u && sourceOkKey in u && u[sourceOkKey] === false) return true;
+    return false;
+  }
 
   const refresh = useCallback(async () => {
     try {
       const raw = await api.get<RawBoard>(BOARD_PATH);
-      const d: BoardData = { tasks: raw.tasks || [], projects: [], profiles: [], automations: [], events: [] };
+
+      // 并行拉取其余三个端点; §2.2/B.1: 单个子源失败不得伪装成空成功, 保留 LKG
+      const [autoR, profR, evR] = await Promise.allSettled([
+        api.get<RawAutomations | { data: RawAutomations }>("/api/v1/automations"),
+        api.get<RawProfiles | { data: RawProfiles }>("/api/v1/profiles"),
+        api.get<RawEvents | { data: RawEvents }>("/api/v1/events?order=desc&limit=8"),
+      ]);
+      const sourcesFailed: BoardState["sourcesFailed"] = {};
+      if (sourceUnusable(autoR, "source_ok")) sourcesFailed.automations = true;
+      if (sourceUnusable(profR, "source_ok")) sourcesFailed.profiles = true;
+      if (sourceUnusable(evR, "source_ok")) sourcesFailed.events = true;
+
+      // 只在子源成功时覆盖该 slice; 失败保留上一次成功数据(LKG), 由 UI 标注 stale
+      const prev = stateRef.current;
+      const d: BoardData = {
+        tasks: raw.tasks || [],
+        projects: (prev?.data?.projects as Project[]) || [],
+        profiles: !sourcesFailed.profiles ? normProfiles(unwrap<RawProfiles>(profR.status === "fulfilled" ? profR.value : null, {})) : (prev?.data?.profiles || []),
+        automations: !sourcesFailed.automations ? normAutomations(unwrap<RawAutomations>(autoR.status === "fulfilled" ? autoR.value : null, {})) : (prev?.data?.automations || []),
+        events: !sourcesFailed.events ? normEvents(unwrap<RawEvents>(evR.status === "fulfilled" ? evR.value : null, {})) : (prev?.data?.events || []),
+      };
       normProjects(raw, d);
       d.meta = {
         events_cursor: raw.events_cursor,
@@ -109,32 +147,9 @@ export function useBoard() {
         counts: raw.counts,
       };
 
-      // 并行拉取其余三个端点; §2.2: 单个子源失败不能伪装成空成功
-      const [autoR, profR, evR] = await Promise.allSettled([
-        api.get<RawAutomations | { data: RawAutomations }>("/api/v1/automations"),
-        api.get<RawProfiles | { data: RawProfiles }>("/api/v1/profiles"),
-        api.get<RawEvents | { data: RawEvents }>("/api/v1/events?order=desc&limit=8"),
-      ]);
-      const sourcesFailed: BoardState["sourcesFailed"] = {};
-
-      if (autoR.status === "fulfilled") {
-        const auto = autoR.value as RawAutomations | { data?: RawAutomations };
-        d.automations = normAutomations((auto as { data?: RawAutomations }).data ?? (auto as RawAutomations));
-      } else { sourcesFailed.automations = true; }
-
-      if (profR.status === "fulfilled") {
-        const prof = profR.value as RawProfiles | { data?: RawProfiles };
-        d.profiles = normProfiles((prof as { data?: RawProfiles }).data ?? prof);
-      } else { sourcesFailed.profiles = true; }
-
-      if (evR.status === "fulfilled") {
-        const ev = evR.value as RawEvents | { data?: RawEvents };
-        d.events = normEvents((ev as { data?: RawEvents }).data ?? (ev as RawEvents));
-      } else { sourcesFailed.events = true; }
-
       setState({ data: d, error: null, sourcesFailed, fetchedAt: raw.fetched_at ?? Date.now() });
     } catch (e) {
-      // 保留已有数据, 标记主源失败(避免整页白屏/回退到过期数据时无标注)
+      // 主源失败: 保留 LKG 数据, 仅标记主源错误(避免整页白屏/回退到过期数据时无标注)
       setState((s) => ({ ...s, error: e instanceof Error ? e.message : String(e) }));
     }
   }, []);

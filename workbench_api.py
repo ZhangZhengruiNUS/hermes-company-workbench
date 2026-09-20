@@ -495,9 +495,12 @@ class Handler(BaseHTTPRequestHandler):
         return os.path.isdir(profile_home(name))
 
     def _wtoken(self):
-        """从 Authorization: Bearer <token> 取写会话 token"""
-        h = self.headers.get("Authorization") or ""
-        return h[7:].strip() if h.startswith("Bearer ") else ""
+        """取写会话 token: 优先 X-Workbench-Write-Token 头, 兼容旧 Authorization: Bearer"""
+        h = self.headers.get("X-Workbench-Write-Token") or ""
+        if h.strip():
+            return h.strip()
+        b = self.headers.get("Authorization") or ""
+        return b[7:].strip() if b.startswith("Bearer ") else ""
 
     def _write_allowed(self):
         """写操作鉴权: 必须携带有效写会话 token"""

@@ -45,6 +45,7 @@ const state = {
   stall: false,
   inject: null,
   failSources: {},
+  sourceOkFalse: {},
   sseClients: new Set(),
   pendingBroadcasts: [],
   stats: {
@@ -128,6 +129,7 @@ function reset(opts) {
   state.stall = false;
   state.inject = null;
   state.failSources = {};
+  state.sourceOkFalse = {};
   state.pendingBroadcasts = [];
   state.stats = { eventsAfter: [], desc: 0, board: 0, automations: 0, profiles: 0, streamConnections: 0, taskDetail: 0 };
 }
@@ -214,6 +216,10 @@ function handleAutomations() {
   if (state.failSources.automations) {
     return { __status: 503, ok: false, error: 'automations unavailable' };
   }
+  if (state.sourceOkFalse.automations) {
+    // HTTP 200 但 source_ok=false: 内部源失败, 不得伪装成空成功
+    return { ok: true, data: { automations: [], source_ok: false } };
+  }
   return { ok: true, data: { automations: state.automations, source_ok: true } };
 }
 
@@ -221,6 +227,10 @@ function handleProfiles() {
   state.stats.profiles++;
   if (state.failSources.profiles) {
     return { __status: 503, ok: false, error: 'profiles unavailable' };
+  }
+  if (state.sourceOkFalse.profiles) {
+    // HTTP 200 但 source_ok=false: 内部源失败, 不得伪装成空成功
+    return { ok: true, data: { profiles: [], source_ok: false } };
   }
   return { ok: true, data: state.profiles };
 }
@@ -353,6 +363,13 @@ function handleControl(reqUrl, res) {
     if (!['automations', 'profiles', 'events'].includes(source)) return send({ ok: false, error: 'bad source' });
     state.failSources[source] = q.get('on') !== '0';
     return send({ ok: true, failSources: state.failSources });
+  }
+  // source_ok=false 模拟: HTTP 200 但子源内部失败 (不伪装成空成功)
+  if (path === '/_ctl/sourceOkFalse') {
+    const source = q.get('source');
+    if (!['automations', 'profiles'].includes(source)) return send({ ok: false, error: 'bad source' });
+    state.sourceOkFalse[source] = q.get('on') !== '0';
+    return send({ ok: true, sourceOkFalse: state.sourceOkFalse });
   }
 
   if (path === '/_ctl/setAutomation') {

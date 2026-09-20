@@ -369,25 +369,61 @@ async function runB7({ page, check, capturedUrls }) {
   check('B7 no events-after catchup from profiles_changed',
     addedEvAfter === 0, `added ${addedEvAfter} events-after requests`);
 
-  // ----- 阶段2: 失败来源不伪装成0或正常 -----
-  // 让 automations 源失败
+  // ----- 阶段2: 子源失败 → LKG 保留旧数据 + stale 标注(不伪装成空/正常, 也不误删缓存) -----
+  // 让 automations 源失败 (HTTP 503)
   await ctlServer('fail', 'source=automations&on=1');
-  // 触发 board 刷新 (可通过 broadcast profiles_changed 触发 fetchBoard)
+  // 触发 board 刷新 (broadcast profiles_changed 触发 fetchBoard)
   await ctlServer('broadcast', 'type=profiles_changed');
   await page.waitForTimeout(2500);
   const bodyFail = await bodyText(page);
-  check('B7 failed source shows warning (not 0/normal)',
-    bodyFail.includes('⚠ 自动化数据暂不可用'),
-    bodyFail.includes('⚠ 自动化数据暂不可用') ? 'shows unavailable warning' : 'missing warning');
-  check('B7 failed source no "暂无自动化任务"',
+  // 之前成功加载过 daily-report → 失败后仍保留 (LKG), 且标注「缓存 · 刷新失败」
+  check('B7 LKG: failed source keeps cached automation row (daily-report retained)',
+    bodyFail.includes('daily-report'),
+    bodyFail.includes('daily-report') ? 'cached row retained' : 'cached row wrongly dropped');
+  check('B7 LKG: shows stale pill 缓存 · 刷新失败',
+    bodyFail.includes('缓存 · 刷新失败'),
+    bodyFail.includes('缓存 · 刷新失败') ? 'stale pill shown' : 'missing stale pill');
+  check('B7 LKG: no "暂无自动化任务" (cache present, not empty)',
     !bodyFail.includes('暂无自动化任务'),
     bodyFail.includes('暂无自动化任务') ? 'wrongly shows empty state' : 'correct');
-  // 也检查之前的 daily-report 名称不出现了(替代为警告)
-  check('B7 failed source no normal automation row',
-    !bodyFail.includes('daily-report'),
-    bodyFail.includes('daily-report') ? 'automation row still shown' : 'correct');
+  // 有缓存时不应整片「暂不可用」空态
+  check('B7 LKG: no "自动化数据暂不可用" empty state (cache present)',
+    !bodyFail.includes('自动化数据暂不可用'),
+    bodyFail.includes('自动化数据暂不可用') ? 'wrongly shows unavailable empty state' : 'correct');
 
   await page.screenshot({ path: `${SCREENSHOT_DIR}/b7-automation-fail.png`, fullPage: false });
+
+  // ----- 阶段3: 恢复 → 正常数据回归, 无 stale 标注 -----
+  await ctlServer('fail', 'source=automations&on=0');
+  await ctlServer('broadcast', 'type=profiles_changed');
+  await page.waitForTimeout(2000);
+  const bodyRecover = await bodyText(page);
+  check('B7 LKG: recovery removes stale pill',
+    !bodyRecover.includes('缓存 · 刷新失败'),
+    bodyRecover.includes('缓存 · 刷新失败') ? 'stale pill lingered after recovery' : 'correct');
+
+  // ----- 阶段4: source_ok=false (HTTP 200 内部失败) → 不得伪装成空/正常 -----
+  // 先置 source_ok=false 再首次加载, 确保无缓存可 LKG 保留 → 验证首次 unavailable 空态
+  await ctlServer('reset', 'baseline=10&sse=1');
+  await ctlServer('sourceOkFalse', 'source=automations&on=1');
+  capturedUrls.length = 0;
+  await page.goto(BASE, { waitUntil: 'networkidle', timeout: 20000 });
+  await page.waitForTimeout(2500);
+  const bodyOkFalse = await bodyText(page);
+  // source_ok=false 且无缓存 → 应显「自动化数据暂不可用」, 而非「暂无自动化任务」或「正常」
+  check('B7 source_ok=false shows unavailable (not empty/normal)',
+    bodyOkFalse.includes('自动化数据暂不可用'),
+    bodyOkFalse.includes('自动化数据暂不可用') ? 'unavailable shown' : 'missing unavailable');
+  check('B7 source_ok=false no "暂无自动化任务"',
+    !bodyOkFalse.includes('暂无自动化任务'),
+    bodyOkFalse.includes('暂无自动化任务') ? 'wrongly shows empty state' : 'correct');
+  // source_ok=false 且无缓存 → 整片 unavailable 空态, 不再渲染任何自动化行
+  check('B7 source_ok=false no cached automation row rendered',
+    !bodyOkFalse.includes('daily-report'),
+    bodyOkFalse.includes('daily-report') ? 'wrongly renders automation row' : 'correct');
+  check('B7 source_ok=false no 正常 capsule',
+    !/>正常</.test(bodyOkFalse),
+    /正常/.test(bodyOkFalse) ? 'wrongly shows 正常' : 'correct');
 }
 
 // ================================================================ entry

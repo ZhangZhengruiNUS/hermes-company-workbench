@@ -41,10 +41,10 @@ function req(opts, headers={}) {
   let boardOk=false; try{ const j=JSON.parse(r3.body); boardOk = r3.status===200 && j.ok && Array.isArray(j.data.tasks); }catch{}
   check('B10 board reads with Basic Auth', boardOk, `HTTP ${r3.status}`);
 
-  // 4. write-status: Basic Auth + Write-Token header coexisting
+  // 4. write-status: Basic Auth + Write-Token header coexisting → unlocked 必须为 true
   const r4 = await req({path:'/api/v1/write-status'}, {basic:`${BASIC_USER}:${BASIC_PASS}`, wt: WTOKEN});
   let wok=false, unlocked=null; try{ const j=JSON.parse(r4.body); wok=r4.status===200 && j.ok; unlocked=j.data && j.data.unlocked; }catch{}
-  check('B10 Basic Auth + Write-Token coexist (write-status 200)', wok, `HTTP ${r4.status} unlocked=${unlocked}`);
+  check('B10 Basic Auth + Write-Token coexist → write unlocked', wok && unlocked===true, `HTTP ${r4.status} unlocked=${unlocked}`);
 
   // 5. write-status without write token -> still reads but write locked (Basic Auth alone OK for read)
   const r5 = await req({path:'/api/v1/write-status'}, {basic:`${BASIC_USER}:${BASIC_PASS}`});
