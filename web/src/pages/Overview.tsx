@@ -319,8 +319,9 @@ function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }
                       {a.schedule || ""}{a.next_run ? ` · 下次 ${a.next_run.slice(0, 16).replace("T", " ")}` : ""}
                     </div>
                   </div>
-                  <Capsule color={bad ? "var(--status-orange)" : a.state === "paused" ? "var(--text-3)" : a.last_status == null ? "var(--text-3)" : "var(--status-green)"}>
-                    {bad ? "异常" : a.state === "paused" ? "已暂停" : a.last_status == null ? "未运行过" : "正常"}
+                  {/* §B.1.1: LKG 缓存期间不得把缓存状态宣传成当前「正常」 */}
+                  <Capsule color={bad ? "var(--status-orange)" : a.state === "paused" ? "var(--text-3)" : a.last_status == null ? "var(--text-3)" : sourcesFailed?.automations ? "var(--text-3)" : "var(--status-green)"}>
+                    {bad ? "异常" : a.state === "paused" ? "已暂停" : a.last_status == null ? "未运行过" : sourcesFailed?.automations ? "正常 · 缓存" : "正常"}
                   </Capsule>
                 </div>
               );

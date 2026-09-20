@@ -151,12 +151,34 @@ for sha in chain:
         mode, otype, bsha = line.split()[0:3]
         need_blobs.add(bsha)
 entries = sorted(need_blobs)
+
+# 已存在于远端的 blob 直接复用, 不重复 POST (B.1.2 最小修正):
+# GET git/blobs/<sha> 200 → 已存在(幂等复用); 404 → 需上传。
+# 上传后校验返回 sha; 失败时输出脱敏 API message/documentation_url, 不打印 Token。
+def blob_exists_remote(sha):
+    r = api("GET", f"git/blobs/{sha}")
+    if r.get("sha") == sha:
+        return True
+    msg = json.dumps({k: r[k] for k in ("message", "documentation_url") if k in r}, ensure_ascii=False) if r else "empty response"
+    if r.get("message") and "Not Found" in str(r.get("message")):
+        return False
+    # 非 404 的异常响应(限流/网络等)视为不确定 → 上传兜底
+    print(f"  blob probe {sha[:8]}: {msg[:200]}")
+    return False
+
+uploaded = reused = 0
 for sha in entries:
+    if blob_exists_remote(sha):
+        reused += 1
+        continue
     content = run("git","cat-file","blob",sha).stdout
     r = api("POST","git/blobs",{"content": base64.b64encode(content).decode(), "encoding": "base64"})
     if r.get("sha") != sha:
-        print(f"blob mismatch {sha[:8]}"); sys.exit(1)
-print(f"blobs ok: {len(entries)}")
+        detail = {k: r[k] for k in ("message", "documentation_url") if k in r}
+        print(f"blob upload failed {sha[:8]}: {json.dumps(detail, ensure_ascii=False)[:500]}")
+        sys.exit(1)
+    uploaded += 1
+print(f"blobs ok: {len(entries)} (uploaded {uploaded}, reused {reused})")
 
 
 # ---- 逐个创建远端 commit: parent 指向前一个对应远端 commit ----

@@ -404,6 +404,8 @@ async function runB7({ page, check, capturedUrls }) {
     bodyRecover.includes('缓存 · 刷新失败') ? 'stale pill lingered after recovery' : 'correct');
 
   // ----- 阶段4: source_ok=false (HTTP 200 内部失败) → 不得伪装成空/正常 -----
+
+  // 阶段4a: source_ok=false 且无缓存(首次加载) → 显「自动化数据暂不可用」
   // 先置 source_ok=false 再首次加载, 确保无缓存可 LKG 保留 → 验证首次 unavailable 空态
   await ctlServer('reset', 'baseline=10&sse=1');
   await ctlServer('sourceOkFalse', 'source=automations&on=1');
@@ -425,6 +427,44 @@ async function runB7({ page, check, capturedUrls }) {
   check('B7 source_ok=false no 正常 capsule',
     !/>正常</.test(bodyOkFalse),
     /正常/.test(bodyOkFalse) ? 'wrongly shows 正常' : 'correct');
+
+  // ----- 阶段5: source_ok=false 但存在 LKG → 语义必须与 HTTP reject 一致 -----
+  // 老板 B.1.1 统一口径: 该子源历史上成功过 → 无论 HTTP/network failure 还是
+  // source_ok=false, 都保留 last-known-good + stale 标注, 不显空数据/暂不可用。
+  await ctlServer('sourceOkFalse', 'source=automations&on=0');
+  await ctlServer('reset', 'baseline=10&sse=1');
+  await ctlServer('setAutomation', 'name=daily-report&field=last_status&value=ok');
+  await ctlServer('setAutomation', 'name=daily-report&field=next_run_at&value=2026-09-21T09:00:00');
+  await page.goto(BASE, { waitUntil: 'networkidle', timeout: 20000 });
+  await page.waitForTimeout(2000);
+  // 确认缓存建立: daily-report 可见且无 stale 标注
+  const bodyLkgBase = await bodyText(page);
+  check('B7 LKG setup: daily-report cached, no stale pill before failure',
+    bodyLkgBase.includes('daily-report') && !bodyLkgBase.includes('缓存 · 刷新失败'),
+    bodyLkgBase.includes('daily-report') ? 'cache established' : 'cache NOT established');
+  // 现在打 source_ok=false(不做任何其它变化), 触发一次 profiles_changed 刷新
+  await ctlServer('sourceOkFalse', 'source=automations&on=1');
+  await ctlServer('broadcast', 'type=profiles_changed');
+  await page.waitForTimeout(2500);
+  const bodyOkFalseLkg = await bodyText(page);
+  // LKG + source_ok=false → 缓存行保留
+  check('B7 source_ok=false with LKG: cached daily-report row retained',
+    bodyOkFalseLkg.includes('daily-report'),
+    bodyOkFalseLkg.includes('daily-report') ? 'cached row retained' : 'CACHE LOST on source_ok=false');
+  // LKG + source_ok=false → stale 标注存在
+  check('B7 source_ok=false with LKG: stale pill shown',
+    bodyOkFalseLkg.includes('缓存 · 刷新失败'),
+    bodyOkFalseLkg.includes('缓存 · 刷新失败') ? 'stale pill shown' : 'missing stale pill');
+  // LKG + source_ok=false → 不显空数据文案
+  check('B7 source_ok=false with LKG: no "暂无自动化任务"',
+    !bodyOkFalseLkg.includes('暂无自动化任务'),
+    bodyOkFalseLkg.includes('暂无自动化任务') ? 'wrongly shows empty' : 'correct');
+  check('B7 source_ok=false with LKG: no "自动化数据暂不可用"',
+    !bodyOkFalseLkg.includes('自动化数据暂不可用'),
+    bodyOkFalseLkg.includes('自动化数据暂不可用') ? 'wrongly shows unavailable' : 'correct');
+  check('B7 source_ok=false with LKG: no bare 正常 capsule (缓存须标注)',
+    !/>正常</.test(bodyOkFalseLkg),
+    />(正常|正常 · 缓存)</.test(bodyOkFalseLkg) ? (/>正常</.test(bodyOkFalseLkg) ? 'wrongly shows bare 正常' : 'shows 缓存-annotated capsule (ok)') : 'correct');
 }
 
 // ================================================================ B8
