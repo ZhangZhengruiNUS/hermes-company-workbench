@@ -462,9 +462,21 @@ async function runB7({ page, check, capturedUrls }) {
   check('B7 source_ok=false with LKG: no "自动化数据暂不可用"',
     !bodyOkFalseLkg.includes('自动化数据暂不可用'),
     bodyOkFalseLkg.includes('自动化数据暂不可用') ? 'wrongly shows unavailable' : 'correct');
-  check('B7 source_ok=false with LKG: no bare 正常 capsule (缓存须标注)',
-    !/>正常</.test(bodyOkFalseLkg),
-    />(正常|正常 · 缓存)</.test(bodyOkFalseLkg) ? (/>正常</.test(bodyOkFalseLkg) ? 'wrongly shows bare 正常' : 'shows 缓存-annotated capsule (ok)') : 'correct');
+  // B.1 关账精确断言: source_ok=false + LKG 必须
+  //   (a) 显示「正常 · 缓存」标注 capsule  (b) 存在 stale pill  (c) 禁止裸「正常」
+  // 不用 body.includes("正常") —— "正常 · 缓存" 也会命中, 必须锚定 >正常< 边界。
+  const hasAnnotatedCapsule = bodyOkFalseLkg.includes('正常 · 缓存');
+  const hasBareNormal = /正常(?! · 缓存)/.test(bodyOkFalseLkg);
+  const hasStalePill = bodyOkFalseLkg.includes('缓存 · 刷新失败');
+  check('B7 source_ok=false with LKG: annotated 正常·缓存 capsule shown',
+    hasAnnotatedCapsule,
+    hasAnnotatedCapsule ? 'annotated capsule shown' : 'missing 正常·缓存 annotation');
+  check('B7 source_ok=false with LKG: stale pill shown',
+    hasStalePill,
+    hasStalePill ? 'stale pill shown' : 'missing stale pill');
+  check('B7 source_ok=false with LKG: no bare 正常 capsule',
+    !hasBareNormal,
+    hasBareNormal ? 'bare 正常 leaked (cache not annotated)' : 'correct');
 }
 
 // ================================================================ B8

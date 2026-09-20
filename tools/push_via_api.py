@@ -25,6 +25,13 @@ BRANCH = os.environ.get("PUSH_BRANCH", "main")
 API = f"https://api.github.com/repos/{REPO}"
 TOKEN = os.environ.get("GITHUB_TOKEN")
 assert TOKEN, "need GITHUB_TOKEN in env"
+
+# PUSH_REPO 输入校验 (B.1 关账): 必须是 owner/repo 格式。
+# 裸仓库名会在所有 API 路径上 404 "Not Found", 掩盖真实原因 — 在任何请求前直接失败。
+if "/" not in REPO or REPO.startswith("/") or REPO.endswith("/") or len(REPO.split("/")) != 2:
+    sys.exit(f"ERROR: PUSH_REPO must be owner/repo format, got: {REPO!r} "
+             f"(example: PUSH_REPO=ZhangZhengruiNUS/hermes-company-workbench). "
+             f"No API calls were made.")
 FORCE = "--force" in sys.argv
 
 def api(method, path, body=None):
