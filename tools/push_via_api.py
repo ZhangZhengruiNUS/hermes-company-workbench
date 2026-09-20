@@ -18,7 +18,7 @@ api.github.com 可达, 故用 Git Data API (blob→tree→commit→ref) 实现�
 
 依赖: 无第三方包, 需本机 git 与环境变量 GITHUB_TOKEN。
 """
-import base64, http.client, json, os, subprocess, sys, time, urllib.request, urllib.error
+import base64, gzip, http.client, json, os, subprocess, sys, time, urllib.request, urllib.error
 
 REPO = os.environ.get("PUSH_REPO", "ZhangZhengruiNUS/hermes-company-workbench")
 BRANCH = os.environ.get("PUSH_BRANCH", "main")
@@ -36,12 +36,14 @@ FORCE = "--force" in sys.argv
 
 def api(method, path, body=None, tries=4):
     # 大 blob 响应(~2MB JSON)在本机链路会被 TCP 截断 → IncompleteRead/JSONDecodeError。
-    # 对策: 分块读 + 短重试 (GET 幂等, POST blob 幂等; 4 次内实测可成功)。
+    # 对策: 显式 Accept-Encoding: gzip (实测 identity 必截断, gzip 3/3 稳定) +
+    # 分块读 + 短重试 (GET 幂等, POST blob 幂等; 4 次内实测可成功)。
     last = None
     for attempt in range(tries):
         req = urllib.request.Request(f"{API}/{path}", method=method,
             data=json.dumps(body).encode() if body is not None else None,
             headers={"Authorization": f"token {TOKEN}", "Accept": "application/vnd.github+json",
+                     "Accept-Encoding": "gzip",
                      "User-Agent": "workbench-push"})
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
@@ -51,7 +53,10 @@ def api(method, path, body=None, tries=4):
                     if not c:
                         break
                     chunks.append(c)
-            return json.loads(b"".join(chunks).decode() or "{}")
+                data = b"".join(chunks)
+                if r.headers.get("Content-Encoding") == "gzip":
+                    data = gzip.decompress(data)
+            return json.loads(data.decode() or "{}")
         except urllib.error.HTTPError as e:
             return json.loads(e.read().decode() or "{}")
         except (urllib.error.URLError, http.client.IncompleteRead, json.JSONDecodeError,
