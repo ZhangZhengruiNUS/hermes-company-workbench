@@ -69,6 +69,7 @@ async function runAll(scenarioFilter) {
     { name: 'B5', fn: runB5, desc: '历史200+200+37·期间插入新事件' },
     { name: 'B6', fn: runB6, desc: 'SSE不可用→轮询→恢复·重挂载不重复连' },
     { name: 'B7', fn: runB7, desc: '仅profiles_changed·自动化独立刷新·失败来源' },
+    { name: 'B8', fn: runB8, desc: '乱序完成·较旧catchup后返回·evCursor不回退' },
   ];
 
   for (const sc of scenarios) {
@@ -424,6 +425,71 @@ async function runB7({ page, check, capturedUrls }) {
   check('B7 source_ok=false no 正常 capsule',
     !/>正常</.test(bodyOkFalse),
     /正常/.test(bodyOkFalse) ? 'wrongly shows 正常' : 'correct');
+}
+
+// ================================================================ B8
+// §B.1.4 乱序完成: 较新 catchup 先返回(较高游标已提交), 较旧 catchup 携带旧快照(更小游标)后返回。
+// 断言最终 evCursor 不回退(Math.max 单调): 观察下一次 catchup 的 after 参数仍为较高游标。
+async function runB8({ page, check, capturedUrls }) {
+  const logs = [];
+  page.on('console', (m) => logs.push(m.text()));
+  await ctlServer('reset', 'baseline=10&sse=1');
+  capturedUrls.length = 0;
+  await page.goto(BASE, { waitUntil: 'networkidle', timeout: 20000 });
+  await page.waitForTimeout(1500);
+
+  // ----- 阶段1: 建立 evCursor=210 -----
+  await ctlServer('add', 'count=200&kind=claimed'); // ids 11..210, eventsCursor=210
+  await ctlServer('broadcast', 'type=events');
+  await page.waitForTimeout(2000);
+  let stats = await ctlStats();
+  const afterFirst = (stats.eventsAfter || []).filter((e) => e.count > 0);
+  const lastFirst = afterFirst[afterFirst.length - 1];
+  check('B8 stage1 evCursor advanced to 210 (last page next_cursor=210, has_more=false)',
+    !!lastFirst && lastFirst.next_cursor === 210 && !lastFirst.has_more,
+    lastFirst ? `after=${lastFirst.after} next_cursor=${lastFirst.next_cursor} has_more=${lastFirst.has_more}` : 'no pages');
+
+  // ----- 阶段2: 触发乱序完成 -----
+  // 再添 200 个事件(211..410), eventsCursor=410
+  await ctlServer('add', 'count=200&kind=claimed');
+  // 一次性 delayAfter: 对 after=210 的请求延迟 1500ms 并返回旧游标 210(旧快照)
+  await ctlServer('delayAfter', 'after=210&ms=1500&staleCursor=210&on=1');
+  // 两次快速广播 → 两个并发 catchup, 均从 evCursor=210 出发请求 after=210
+  await ctlServer('broadcast', 'type=events');
+  await ctlServer('broadcast', 'type=events');
+  // 等待: 较新(fast, cursor=410)先返回提交 evCursor=410; 较旧(stale, cursor=210)1500ms后返回
+  await page.waitForTimeout(3000);
+
+  stats = await ctlStats();
+  const allAfter = (stats.eventsAfter || []);
+  // 确认确实发生了乱序完成: 存在一个 stale 记录
+  const staleRec = allAfter.find((e) => e.stale);
+  check('B8 out-of-order path executed (stale response seen)',
+    !!staleRec,
+    staleRec ? `stale after=${staleRec.after} cursor=${staleRec.stale_cursor}` : 'no stale response');
+  // 确认较新 catchup 提交了较高游标 410 (存在 next_cursor=410 且 has_more=false 的非stale记录)
+  const committed410 = allAfter.some((e) => !e.stale && e.next_cursor === 410 && !e.has_more);
+  check('B8 newer catchup committed cursor 410', committed410,
+    committed410 ? 'next_cursor=410 has_more=false seen' : 'no 410 commit');
+
+  // ----- 阶段3: 证明 evCursor 不回退 -----
+  // 再次广播 → 下一次 catchup 应从 evCursor(≥410) 出发。观察 after 参数。
+  capturedUrls.length = 0;
+  await ctlServer('broadcast', 'type=events');
+  await page.waitForTimeout(2500);
+  // 从捕获的 URL 解析 after 值
+  const afterParams = capturedUrls
+    .map((u) => new URL(u).searchParams.get('after'))
+    .map((n) => Number(n));
+  check('B8 subsequent catchup starts from high cursor (after>=410, not regressed to 210)',
+    afterParams.length > 0 && afterParams.every((a) => a >= 410),
+    'next after values: ' + JSON.stringify(afterParams));
+
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/b8-outoforder-cursor.png`, fullPage: false });
+  check('B8 advanceEvCursor monotonic log (no prev > next regression)',
+    logs.every((l) => !l.startsWith('[B8-REG]') || l.includes('advanceEvCursor(')),
+    'last reg log: ' + (logs.filter((l) => l.startsWith('[B8-REG]')).slice(-3).join(' | ') || 'none'));
+  console.log('  [B8] evCursor sequence:', JSON.stringify(logs.filter((l) => l.startsWith('[B8-REG]'))));
 }
 
 // ================================================================ entry

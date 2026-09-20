@@ -140,7 +140,9 @@ async function fetchBoard(): Promise<boolean> {
 // ---- 旧版 parity: onNotify ----
 // evCursor 只能单调递增: 乱序完成的 catchup 不得让游标回退 (§B.1.4)
 function advanceEvCursor(c: number) {
+  // 单调保护: 乱序完成的 catchup 不得让游标回退 (§B.1.4)
   if (c > KANBAN_STATE.evCursor) {
+    console.log("[B8-REG] advanceEvCursor(" + KANBAN_STATE.evCursor + " -> " + c + ")");
     KANBAN_STATE.evCursor = c;
     return true;
   }

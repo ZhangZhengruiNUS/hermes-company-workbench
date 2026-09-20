@@ -46,6 +46,9 @@ const state = {
   inject: null,
   failSources: {},
   sourceOkFalse: {},
+  // B.1.4 乱序完成: 延迟特定 after 的 events-after 响应, 返回一个更旧的(更小)游标,
+  // 模拟"较旧 catchup 后返回" — 断言前端 evCursor 不因此回退(Math.max 单调)
+  delayAfter: null,
   sseClients: new Set(),
   pendingBroadcasts: [],
   stats: {
@@ -130,6 +133,7 @@ function reset(opts) {
   state.inject = null;
   state.failSources = {};
   state.sourceOkFalse = {};
+  state.delayAfter = null;
   state.pendingBroadcasts = [];
   state.stats = { eventsAfter: [], desc: 0, board: 0, automations: 0, profiles: 0, streamConnections: 0, taskDetail: 0 };
 }
@@ -163,6 +167,27 @@ function handleEventsAsc(after, limit) {
   const hasMore = cands.length > limit;
   const nextCursor = page.length ? page[page.length - 1].id : after;
   rec.has_more = hasMore; rec.next_cursor = nextCursor;
+  // B.1.4 乱序完成: 若命中 delayAfter, 返回一个比真实游标更旧的 next_cursor
+  // (模拟较旧 catchup 携带旧快照后返回), 由响应层负责延迟发送。一次性: 命中后即清除,
+  // 保证仅一个"较旧 catchup"被延迟, 另一个(较新)catchup 正常快速返回更高游标。
+  if (state.delayAfter && state.delayAfter.after === after) {
+    rec.stale = true; rec.stale_cursor = state.delayAfter.staleCursor;
+    state.stats.eventsAfter.push(rec);
+    // 关键: stale 响应必须"携带事件"(ed.events.length>0), 否则 live.ts 的
+    // `if (ed.events.length) advanceEvCursor(...)` 不会提交这个低游标, 单调保护形同虚设。
+    // 返回 page 事件, 但 next_cursor 是旧的(更小)游标 → 模拟较旧 catchup 携带旧快照后返回。
+    const stale = {
+      events: page.map(publicEvent),
+      has_more: false,
+      next_cursor: state.delayAfter.staleCursor,
+      cursor: after,
+      after,
+      stale: true,
+      staleMs: state.delayAfter.ms,
+    };
+    state.delayAfter = null; // 一次性
+    return stale;
+  }
   state.stats.eventsAfter.push(rec);
   return { events: page.map(publicEvent), has_more: hasMore, next_cursor: nextCursor, cursor: after, after };
 }
@@ -353,6 +378,15 @@ function handleControl(reqUrl, res) {
     return send({ ok: true, stall: state.stall });
   }
 
+  // B.1.4 乱序完成: 对指定 after 的 events-after 响应延迟 ms 毫秒, 返回 staleCursor(更旧游标)
+  if (path === '/_ctl/delayAfter') {
+    const on = q.get('on') !== '0';
+    state.delayAfter = on
+      ? { after: Number(q.get('after') || 0), ms: Number(q.get('ms') || 500), staleCursor: Number(q.get('staleCursor') != null ? q.get('staleCursor') : q.get('after') || 0) }
+      : null;
+    return send({ ok: true, delayAfter: state.delayAfter });
+  }
+
   if (path === '/_ctl/injectRule') {
     state.inject = { afterNth: Number(q.get('afterNth') || 2), count: Number(q.get('count') || 3), n: 0 };
     return send({ ok: true, inject: state.inject });
@@ -424,6 +458,15 @@ const server = http.createServer((req, res) => {
   if (url.startsWith('/api/v1/events')) {
     const q = getQuery(url);
     const out = handleEvents(q);
+    // B.1.4 乱序完成: 若响应标记 stale, 延迟发送以模拟"较旧 catchup 后返回"
+    if (out.data && out.data.stale) {
+      console.log('[B8-SRV ' + Date.now() + '] stale after=' + out.data.after + ' delaying ' + (out.data.staleMs||500) + 'ms cursor=' + out.data.next_cursor);
+      setTimeout(() => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(out));
+      }, out.data.staleMs || 500);
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return;
   }
 
