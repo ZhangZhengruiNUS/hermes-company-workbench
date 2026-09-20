@@ -58,7 +58,10 @@ def api(method, path, body=None, tries=4):
                     data = gzip.decompress(data)
             return json.loads(data.decode() or "{}")
         except urllib.error.HTTPError as e:
-            return json.loads(e.read().decode() or "{}")
+            err = e.read()
+            if e.headers.get("Content-Encoding") == "gzip":
+                err = gzip.decompress(err)
+            return json.loads(err.decode() or "{}")
         except (urllib.error.URLError, http.client.IncompleteRead, json.JSONDecodeError,
                 ConnectionError, TimeoutError) as e:
             last = e
