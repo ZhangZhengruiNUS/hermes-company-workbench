@@ -15,7 +15,7 @@ const LIVE_TEXT: Record<LiveState, string> = {
   live: "秒级同步",
   polling: "降级轮询",
   reconnecting: "正在重连",
-  error: "读取失败",
+  offline: "读取失败",
 };
 
 interface Props {
@@ -56,7 +56,7 @@ export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search
       <span
         className="pill"
         style={{
-          color: liveState === "live" ? "var(--status-green)" : liveState === "error" ? "var(--status-red)" : "var(--status-orange)",
+          color: liveState === "live" ? "var(--status-green)" : liveState === "offline" ? "var(--status-red)" : "var(--status-orange)",
         }}
         title={`实时连接状态: ${LIVE_TEXT[liveState]}`}
       >

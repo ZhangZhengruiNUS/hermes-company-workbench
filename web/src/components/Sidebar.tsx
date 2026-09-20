@@ -20,7 +20,7 @@ const LIVE_TEXT: Record<LiveState, string> = {
   live: "实时数据",
   polling: "降级轮询",
   reconnecting: "正在重连",
-  error: "读取失败",
+  offline: "读取失败",
 };
 
 interface Props {
@@ -127,7 +127,7 @@ export function Sidebar({ view, onView, liveState, lastSnap, version, mobileOpen
           <span
             className={`w-1.5 h-1.5 rounded-full ${liveState === "live" ? "live-dot" : ""}`}
             style={{
-              background: liveState === "live" ? "var(--status-green)" : liveState === "error" ? "var(--status-red)" : "var(--status-orange)",
+              background: liveState === "live" ? "var(--status-green)" : liveState === "offline" ? "var(--status-red)" : "var(--status-orange)",
             }}
           />
           {LIVE_TEXT[liveState]}

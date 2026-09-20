@@ -113,13 +113,20 @@ body {
     0 10px 32px -20px rgba(30, 60, 120, 0.3);
 }
 .cmd-glass::before {
-  /* 左上折射高光 */
+  /* 左上折射高光 — mask 跟随 border-radius 收边, 避免在圆角处溢棱 */
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, transparent 32%);
+  -webkit-mask-image: linear-gradient(#000, #000);
+  mask-image: linear-gradient(#000, #000);
   pointer-events: none;
+}
+:root.light .cmd-glass::before {
+  /* 浅色同样以 mask 收边, 高光强度不变 */
+  -webkit-mask-image: linear-gradient(#000, #000);
+  mask-image: linear-gradient(#000, #000);
 }
 
 /* ============ Surface B — Prism Card ============ */

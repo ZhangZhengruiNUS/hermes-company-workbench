@@ -1,10 +1,12 @@
 // 总览 v2 — Executive Strip + Live Mission Surface + Mission Cards + Control Stack + 数据流 timeline
+// §2.1: 完成=只done, 归档单列; §2.2: 子源失败如实标注; §2.3: fmtTs 工作台时区
 import { motion } from "motion/react";
+import { useState } from "react";
 import { PrismCard, Capsule } from "../components/PrismCard";
 import { EmptyState } from "../components/glass";
 import { statusMeta, ALL_STATUSES, type BoardData, type Task } from "../lib/api";
-import { currentProgress, currentWork, statusCounts, attentionItems } from "../lib/board";
-import { AlertTriangle, Zap, Radio, CircleDashed } from "lucide-react";
+import { currentProgress, currentWork, statusCounts, attentionItems, projStats, fmtTs } from "../lib/board";
+import { AlertTriangle, Zap, Radio, CircleDashed, Bot, Hexagon, Waves } from "lucide-react";
 
 const EVENT_KIND: Record<string, string> = {
   created: "创建", started: "开始", completed: "完成", archived: "归档",
@@ -14,13 +16,15 @@ const EVENT_KIND: Record<string, string> = {
 interface Props {
   data: BoardData;
   error: string | null;
+  sourcesFailed?: Partial<Record<"automations" | "profiles" | "events", boolean>>;
   onOpenTask: (id: string) => void;
   onGotoProjectTasks: (projectId: string) => void;
 }
 
-/* ---------- Executive Strip: 一块大玻璃基座, 5 指标 + vertical divider ---------- */
+/* ---------- Executive Strip: §2.1 完成不含归档 ---------- */
 function ExecutiveStrip({ counts, workN, projN }: { counts: Record<string, number>; workN: number; projN: number }) {
-  const doneN = (counts.done || 0) + (counts.archived || 0);
+  // §2.1: 完成仅 status==="done", 不得计入 archived
+  const doneN = counts.done || 0;
   const cells = [
     { label: "当前工作", value: workN, color: "var(--accent-blue)" },
     { label: "进行中", value: counts.running || 0, color: "var(--accent-blue)" },
@@ -71,8 +75,8 @@ function LiveMission({ progress, onOpen }: { progress: Task[]; onOpen: (id: stri
         <Radio size={13} style={{ color: progress.length ? "var(--status-green)" : "var(--text-3)" }} aria-hidden />
         <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>当前推进</h2>
       </div>
-      <PrismCard>
-        {progress.length === 0 ? (
+      {progress.length === 0 ? (
+        <div className="quiet-surface">
           <div className="px-5 py-4">
             <div className="flex items-center gap-2 mb-1.5">
               <CircleDashed size={13} style={{ color: "var(--text-3)" }} aria-hidden />
@@ -81,8 +85,10 @@ function LiveMission({ progress, onOpen }: { progress: Task[]; onOpen: (id: stri
             <div className="text-[13px]" style={{ color: "var(--text-2)" }}>当前没有正在推进的 Kanban 任务</div>
             <div className="idle-wave mt-3 rounded-full" aria-hidden />
           </div>
-        ) : (
-          progress.map((t) => {
+        </div>
+      ) : (
+        <PrismCard>
+          {progress.map((t) => {
             const m = statusMeta(t.status);
             return (
               <motion.button
@@ -106,22 +112,51 @@ function LiveMission({ progress, onOpen }: { progress: Task[]; onOpen: (id: stri
                 {t.assignee && <span className="text-[11px] shrink-0" style={{ color: "var(--text-3)" }}>{t.assignee}</span>}
               </motion.button>
             );
-          })
-        )}
-      </PrismCard>
+          })}
+        </PrismCard>
+      )}
     </div>
   );
 }
 
-/* ---------- Mission Cards: 项目卡 ---------- */
+/* ---------- Member Avatar: 生产资产 img + 中文首字 fallback ---------- */
+function MemberAvatar({ name, fallback }: { name: string; fallback: string }) {
+  const [err, setErr] = useState(false);
+  if (err) {
+    return (
+      <div
+        className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+        style={{ background: "linear-gradient(135deg, var(--accent-blue), var(--accent-violet))", color: "#fff" }}
+      >
+        {fallback}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={`/avatars/${name}.png`}
+      alt={fallback}
+      loading="lazy"
+      onError={() => setErr(true)}
+      className="w-7 h-7 rounded-full object-cover shrink-0"
+    />
+  );
+}
+
+/* ---------- Mission Cards: §2.1 使用统一 projStats ---------- */
 function MissionCards({ projects, tasks, onGoto }: { projects: BoardData["projects"]; tasks: Task[]; onGoto: (id: string) => void }) {
   return (
     <div className="flex flex-col gap-3">
       {projects.slice(0, 4).map((p, i) => {
-        const pt = tasks.filter((t) => t.project_id === p.id);
-        const pdone = pt.filter((t) => t.status === "done" || t.status === "archived").length;
-        const pct = pt.length ? Math.round((pdone / pt.length) * 100) : 0;
+        const s = projStats(tasks, p.id);
+        const pct = s.rate ?? 0;
         const accent = i % 2 === 0 ? "rgba(110,168,255,0.06)" : "rgba(148,124,255,0.06)";
+        // §2.1: none 显示"暂无任务"; 仅有归档时显示"当前无未归档任务 · 历史归档 N 项"
+        const progressLabel = s.total === 0
+          ? "暂无任务"
+          : s.activeTasks.length === 0 && s.rate === null
+            ? `当前无未归档任务 · 历史归档 ${s.archived} 项`
+            : `${s.done}/${s.total - s.archived} 已完成${s.archived ? ` · 归档 ${s.archived}` : ""}`;
         return (
           <PrismCard
             key={p.id}
@@ -142,7 +177,7 @@ function MissionCards({ projects, tasks, onGoto }: { projects: BoardData["projec
             </div>
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <b className="text-[14.5px]" style={{ color: "var(--text-1)" }}>{p.name}</b>
-              <Capsule color={pct === 100 ? "var(--status-green)" : "var(--accent-blue)"}>{pdone}/{pt.length}</Capsule>
+              <Capsule color={pct === 100 ? "var(--status-green)" : "var(--accent-blue)"} title={progressLabel}>{s.done}/{s.total - s.archived}</Capsule>
             </div>
             {p.description && (
               <p className="text-[12px] m-0 mb-3 line-clamp-1" style={{ color: "var(--text-3)" }}>{p.description}</p>
@@ -163,9 +198,10 @@ function MissionCards({ projects, tasks, onGoto }: { projects: BoardData["projec
   );
 }
 
-/* ---------- Recent Activity: 数据流 timeline ---------- */
+/* ---------- Recent Activity: 数据流 timeline, §2.3 使用 fmtTs ---------- */
 function DataStream({ events }: { events: BoardData["events"] }) {
-  const list = (events || []).slice(0, 8);
+  // backend returns ascending (oldest first); reverse so head=newest, fresh ring hits latest
+  const list = (events || []).slice(-8).reverse();
   return (
     <div className="px-4 py-3">
       {list.length === 0 ? (
@@ -196,7 +232,8 @@ function DataStream({ events }: { events: BoardData["events"] }) {
                 }}
               />
               <span className="text-[10px] tabular-nums shrink-0 mt-0.5 font-mono" style={{ color: "var(--text-3)" }}>
-                {(ev.ts || "").slice(5, 16)}
+                {/* §2.3: 原始时间 tooltip */}
+                <span title={ev.ts || ""}>{fmtTs(ev.ts ? Math.floor(new Date(ev.ts).getTime() / 1000) : null)}</span>
               </span>
               <span className="shrink-0 text-[11.5px]" style={{ color: "var(--accent-cyan)" }}>
                 {EVENT_KIND[ev.kind || ""] || ev.kind || "事件"}
@@ -213,11 +250,12 @@ function DataStream({ events }: { events: BoardData["events"] }) {
 }
 
 /* ---------- Control Stack 右栏 ---------- */
-function ControlStack({ attention, automations, profiles, tasks }: {
+function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }: {
   attention: ReturnType<typeof attentionItems>;
   automations: BoardData["automations"];
   profiles: BoardData["profiles"];
   tasks: Task[];
+  sourcesFailed?: Partial<Record<"automations" | "profiles" | "events", boolean>>;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -227,11 +265,11 @@ function ControlStack({ attention, automations, profiles, tasks }: {
           <AlertTriangle size={13} style={{ color: attention.length ? "var(--status-orange)" : "var(--text-3)" }} aria-hidden />
           <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>需要关注</h2>
         </div>
-        <PrismCard>
-          {attention.length === 0 ? (
-            <EmptyState>当前没有需要你处理的事项</EmptyState>
-          ) : (
-            attention.slice(0, 6).map((a, i) => (
+        {attention.length === 0 ? (
+          <div className="quiet-surface"><EmptyState>当前没有需要你处理的事项</EmptyState></div>
+        ) : (
+          <PrismCard>
+            {attention.slice(0, 6).map((a, i) => (
               <div key={i} className="flex items-start gap-2.5 px-4 py-2.5" style={{ borderBottom: i < Math.min(attention.length, 6) - 1 ? "1px solid var(--border-soft)" : undefined }}>
                 <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ background: "var(--status-orange)" }} />
                 <div className="min-w-0">
@@ -239,25 +277,34 @@ function ControlStack({ attention, automations, profiles, tasks }: {
                   <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{a.detail}</div>
                 </div>
               </div>
-            ))
-          )}
-        </PrismCard>
+            ))}
+          </PrismCard>
+        )}
       </section>
 
-      {/* Automation */}
+      {/* Automation — §2.2: 子源失败如实显示 */}
       <section>
         <div className="flex items-center gap-2 mb-2.5 px-1">
           <Zap size={13} style={{ color: "var(--accent-cyan)" }} aria-hidden />
           <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>自动化</h2>
         </div>
-        <PrismCard>
-          {automations.length === 0 ? (
-            <EmptyState>暂无自动化任务</EmptyState>
-          ) : (
-            automations.slice(0, 6).map((a, i) => {
-              const bad = a.state === "error" || a.last_status === "error" || a.last_delivery_error;
+        {sourcesFailed?.automations ? (
+          <div className="quiet-surface"><EmptyState>⚠ 自动化数据暂不可用</EmptyState></div>
+        ) : automations.length === 0 ? (
+          <div className="quiet-surface"><EmptyState>暂无自动化任务</EmptyState></div>
+        ) : (
+          <PrismCard>
+            {automations.slice(0, 6).map((a, i) => {
+              // §2.2: 只认 has_issue, 不再用 last_delivery_error 判异常
+              const bad = a.has_issue || (a.last_error != null);
+              const tooltip = [
+                a.schedule || "",
+                a.next_run ? `下次 ${a.next_run.slice(0, 16).replace("T", " ")}` : "",
+                a.last_status == null ? "未运行过" : a.last_status,
+                a.issue_summary || "",
+              ].filter(Boolean).join(" · ");
               return (
-                <div key={a.name} className="flex items-center gap-2.5 px-4 py-2.5" style={{ borderBottom: i < Math.min(automations.length, 6) - 1 ? "1px solid var(--border-soft)" : undefined }}>
+                <div key={a.name} className="flex items-center gap-2.5 px-4 py-2.5" title={tooltip} style={{ borderBottom: i < Math.min(automations.length, 6) - 1 ? "1px solid var(--border-soft)" : undefined }}>
                   <Zap size={13} className="shrink-0" style={{ color: bad ? "var(--status-orange)" : "var(--accent-cyan)" }} aria-hidden />
                   <div className="min-w-0 flex-1">
                     <div className="text-[12.5px] truncate" style={{ color: "var(--text-1)" }}>{a.name}</div>
@@ -265,27 +312,29 @@ function ControlStack({ attention, automations, profiles, tasks }: {
                       {a.schedule || ""}{a.next_run ? ` · 下次 ${a.next_run.slice(0, 16).replace("T", " ")}` : ""}
                     </div>
                   </div>
-                  <Capsule color={bad ? "var(--status-orange)" : a.state === "paused" ? "var(--text-3)" : "var(--status-green)"}>
-                    {bad ? "异常" : a.state === "paused" ? "已暂停" : a.state === "completed" ? "已完成" : "正常"}
+                  <Capsule color={bad ? "var(--status-orange)" : a.state === "paused" ? "var(--text-3)" : a.last_status == null ? "var(--text-3)" : "var(--status-green)"}>
+                    {bad ? "异常" : a.state === "paused" ? "已暂停" : a.last_status == null ? "未运行过" : "正常"}
                   </Capsule>
                 </div>
               );
-            })
-          )}
-        </PrismCard>
+            })}
+          </PrismCard>
+        )}
       </section>
 
       {/* Team Pulse — compact personnel rail */}
       <section>
         <div className="flex items-center gap-2 mb-2.5 px-1">
-          <span className="text-[13px]" aria-hidden>◍</span>
+          <Bot size={13} style={{ color: "var(--text-3)" }} aria-hidden />
           <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>团队任务概览</h2>
         </div>
-        <PrismCard>
-          {profiles.length === 0 ? (
-            <EmptyState>暂无成员数据</EmptyState>
-          ) : (
-            profiles.slice(0, 8).map((p, i) => {
+        {sourcesFailed?.profiles ? (
+          <div className="quiet-surface"><EmptyState>⚠ 成员数据暂不可用</EmptyState></div>
+        ) : profiles.length === 0 ? (
+          <div className="quiet-surface"><EmptyState>暂无成员数据</EmptyState></div>
+        ) : (
+          <PrismCard>
+            {profiles.slice(0, 9).map((p, i) => {
               const mine = tasks.filter((t) => t.assignee === p.name);
               const running = mine.filter((t) => t.status === "running").length;
               const done = mine.filter((t) => t.status === "done").length;
@@ -294,17 +343,12 @@ function ControlStack({ attention, automations, profiles, tasks }: {
                   key={p.name}
                   className="flex items-center gap-2.5 px-4 py-2 transition-colors"
                   style={{
-                    borderBottom: i < Math.min(profiles.length, 8) - 1 ? "1px solid var(--border-soft)" : undefined,
+                    borderBottom: i < Math.min(profiles.length, 9) - 1 ? "1px solid var(--border-soft)" : undefined,
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(110,168,255,0.05)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
-                  <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
-                    style={{ background: "linear-gradient(135deg, var(--accent-blue), var(--accent-violet))", color: "#fff" }}
-                  >
-                    {(p.display_name || p.name).slice(0, 1)}
-                  </div>
+                  <MemberAvatar name={p.name} fallback={(p.display_name || p.name).slice(0, 1)} />
                   <div className="min-w-0 flex-1">
                     <div className="text-[12.5px] truncate" style={{ color: "var(--text-1)" }}>
                       {p.display_name || p.name}
@@ -319,16 +363,16 @@ function ControlStack({ attention, automations, profiles, tasks }: {
                   </span>
                 </div>
               );
-            })
-          )}
-        </PrismCard>
+            })}
+          </PrismCard>
+        )}
       </section>
     </div>
   );
 }
 
 /* ---------- Page ---------- */
-export function Overview({ data, onOpenTask, onGotoProjectTasks }: Props) {
+export function Overview({ data, sourcesFailed, onOpenTask, onGotoProjectTasks }: Props) {
   const tasks = data.tasks || [];
   const projects = data.projects || [];
   const automations = data.automations || [];
@@ -342,7 +386,7 @@ export function Overview({ data, onOpenTask, onGotoProjectTasks }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Executive Strip — 一块基座 */}
+      {/* Executive Strip — 一块基座, §2.1 完成不含归档 */}
       <ExecutiveStrip counts={counts} workN={work.length} projN={projects.length} />
 
       {/* telemetry strip — 9 状态 */}
@@ -360,7 +404,7 @@ export function Overview({ data, onOpenTask, onGotoProjectTasks }: Props) {
 
           <section>
             <div className="flex items-center gap-2 mb-2.5 px-1">
-              <span className="text-[13px]" aria-hidden>◈</span>
+              <Hexagon size={13} style={{ color: "var(--text-3)" }} aria-hidden />
               <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>重点项目</h2>
             </div>
             {projects.length === 0
@@ -370,7 +414,7 @@ export function Overview({ data, onOpenTask, onGotoProjectTasks }: Props) {
 
           <section>
             <div className="flex items-center gap-2 mb-2.5 px-1">
-              <span className="text-[13px]" aria-hidden>≋</span>
+              <Waves size={13} style={{ color: "var(--text-3)" }} aria-hidden />
               <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>最近动态</h2>
             </div>
             <PrismCard><DataStream events={events} /></PrismCard>
@@ -382,6 +426,7 @@ export function Overview({ data, onOpenTask, onGotoProjectTasks }: Props) {
           automations={automations}
           profiles={profiles}
           tasks={tasks}
+          sourcesFailed={sourcesFailed}
         />
       </div>
     </div>

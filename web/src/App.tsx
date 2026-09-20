@@ -5,32 +5,41 @@ import { AuroraBackground } from "./components/Aurora";
 import { Sidebar, type ViewId } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { Overview } from "./pages/Overview";
+import { Tasks } from "./pages/Tasks";
+import { TaskDetailDrawer } from "./components/TaskDetailDrawer";
 import { useBoard } from "./lib/board";
 import { useLiveFeed } from "./lib/live";
 import { useTheme } from "./lib/theme";
 
-const VERSION = "__WB_VERSION__";
+// 构建期由 vite define 注入 git SHA (见 vite.config.ts); dev 下为占位符
+declare const __WB_VERSION__: string;
+const VERSION = __WB_VERSION__;
 const V = VERSION.startsWith("__WB") ? "dev" : VERSION;
 
-// hash 路由: #overview / #tasks?task=<id> / #team / #projects / #activity
-function parseHash(): { view: ViewId; taskId: string | null } {
+// hash 路由: #overview / #tasks?task=<id>&project=<pid> / #team / #projects / #activity
+function parseHash(): { view: ViewId; taskId: string | null; projectId: string | null; search: string } {
   const h = location.hash.replace(/^#/, "");
   const [viewPart, queryPart] = h.split("?");
   const valid: ViewId[] = ["overview", "tasks", "team", "projects", "activity"];
   const view = (valid.includes(viewPart as ViewId) ? viewPart : "overview") as ViewId;
   let taskId: string | null = null;
+  let projectId: string | null = null;
+  let search = "";
   if (queryPart) {
     const m = new URLSearchParams(queryPart);
     taskId = m.get("task");
+    projectId = m.get("project");
+    search = m.get("q") || "";
   }
-  return { view, taskId };
+  return { view, taskId, projectId, search };
 }
 
 export default function App() {
   const [route, setRoute] = useState(parseHash);
   const view = route.view;
-  // taskId 在 Phase B 任务详情 drawer 中使用; Phase A 预览仅路由透传
-  void route.taskId;
+  const taskId = route.taskId;
+  const projectId = route.projectId;
+  const routeSearch = route.search;
   const [search, setSearch] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
   const { theme, toggle } = useTheme();
@@ -41,7 +50,7 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  const { data, error, refresh } = useBoard();
+  const { data, error, sourcesFailed, refresh } = useBoard();
   const { liveState, lastSnap } = useLiveFeed(refresh);
 
   const goto = useCallback((v: ViewId) => {
@@ -71,16 +80,18 @@ export default function App() {
         transition={{ duration: 0.2 }}
       >
         {error && (
-          <div className="glass-read rounded-[var(--radius-card)] px-4 py-3 mb-3 text-[13px]" style={{ color: "var(--status-red)" }}>
+          <div className="quiet-surface px-4 py-3 mb-3 text-[13px]" style={{ color: "var(--status-red)" }}>
             数据读取失败: {error}（将随实时连接自动重试）
           </div>
         )}
         {view === "overview" && data && (
-          <Overview data={data} error={null} onOpenTask={openTask} onGotoProjectTasks={gotoProjectTasks} />
+          <Overview data={data} error={null} sourcesFailed={sourcesFailed} onOpenTask={openTask} onGotoProjectTasks={gotoProjectTasks} />
         )}
-        {view !== "overview" && (
+        {view === "tasks" && data && (
+          <Tasks data={data} onOpenTask={openTask} initialProject={projectId} initialSearch={routeSearch || search} />
+        )}
+        {view !== "overview" && view !== "tasks" && (
           <div className="glass-1 rounded-[var(--radius-card)] p-8 text-center text-[13px]" style={{ color: "var(--text-3)" }}>
-            {view === "tasks" && "任务页迁移中 — Phase B 实现 (当前请使用正式入口)"}
             {view === "team" && "团队页迁移中 — Phase C 实现"}
             {view === "projects" && "项目页迁移中 — Phase C 实现"}
             {view === "activity" && "活动页迁移中 — Phase C 实现"}
@@ -122,6 +133,15 @@ export default function App() {
           {content}
         </main>
       </div>
+
+      {/* task detail drawer — #tasks?task=<id>; 传入 taskId 直接拉详情, 未知ID显示错误态 */}
+      <TaskDetailDrawer
+        taskId={taskId}
+        data={taskId ? (data?.tasks.find((t) => t.id === taskId) ?? null) : null}
+        open={!!taskId}
+        onClose={() => { location.hash = view === "tasks" ? "tasks" : view; }}
+        onOpenTask={openTask}
+      />
     </div>
   );
 }

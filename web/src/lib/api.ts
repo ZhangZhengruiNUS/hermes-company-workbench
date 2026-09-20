@@ -118,8 +118,12 @@ export interface Automation {
   state?: string;
   last_status?: string | null;
   last_delivery_error?: string | null;
+  last_error?: string | null;        // 执行失败, 与 last_delivery_error 严格区分(§2.2)
+  has_issue?: boolean;               // 后端自动化 has_issue 字段, 必须保留(§2.2)
+  issue_summary?: string;
   next_run?: string;
   last_success?: string;
+  last_run_at?: string;
   ticker_heartbeat?: string;
   ticker_success?: string;
 }
@@ -129,7 +133,14 @@ export interface BoardData {
   profiles: Profile[];
   automations: Automation[];
   events?: EventItem[];
-  meta?: Record<string, unknown>;
+  // §2.2: 保留原始 meta 供 source-ok/error 区分
+  meta?: {
+    events_cursor?: number;
+    fetched_at?: number;
+    projects_ok?: boolean;
+    projects_error?: string;
+    counts?: Record<string, number>;
+  };
 }
 export interface EventItem {
   id?: number;
