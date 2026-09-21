@@ -7,6 +7,7 @@ import { Topbar } from "./components/Topbar";
 import { Overview } from "./pages/Overview";
 import { Tasks } from "./pages/Tasks";
 import Projects from "./pages/Projects";
+import { Activity } from "./pages/Activity";
 import { TaskDetailDrawer } from "./components/TaskDetailDrawer";
 import { useBoard } from "./lib/board";
 import { useLiveFeed } from "./lib/live";
@@ -94,10 +95,12 @@ export default function App() {
         {view === "projects" && data && (
           <Projects data={data} onGotoProjectTasks={gotoProjectTasks} />
         )}
-        {(view === "team" || view === "activity") && (
+        {view === "activity" && data && (
+          <Activity data={data} sourcesFailed={sourcesFailed} />
+        )}
+        {view === "team" && (
           <div className="glass-1 rounded-[var(--radius-card)] p-8 text-center text-[13px]" style={{ color: "var(--text-3)" }}>
-            {view === "team" && "团队页迁移中 — Phase C 实现"}
-            {view === "activity" && "活动页迁移中 — Phase C 实现"}
+            团队页迁移中 — Phase C 实现
           </div>
         )}
         {!data && !error && (

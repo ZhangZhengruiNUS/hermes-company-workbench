@@ -292,12 +292,29 @@ function handleEventsDesc(limit) {
   };
 }
 
+// B13 Activity 历史分页: before=<id> 返回比该 id 更旧的事件, 倒序, 支持 has_more
+function handleEventsDescBefore(before, limit) {
+  const cap = limit || 15;
+  const older = state.events.filter((e) => e.id < before).sort((a, b) => b.id - a.id);
+  const page = older.slice(0, cap);
+  return {
+    events: page.map(publicEvent),
+    has_more: older.length > cap,
+    next_before: page.length ? page[page.length - 1].id : before,
+    before,
+  };
+}
+
 function handleEvents(q) {
   const after = q.get('after');
   const order = q.get('order');
+  const before = q.get('before');
   const limit = q.get('limit') ? Number(q.get('limit')) : 200;
   let data;
-  if (order === 'desc') {
+  if (before != null) {
+    // B13: 历史分页 before=<id>, 默认 15 条
+    data = handleEventsDescBefore(Number(before) || 0, limit);
+  } else if (order === 'desc') {
     data = handleEventsDesc(limit);
   } else if (after != null) {
     data = handleEventsAsc(Number(after) || 0, 200);
@@ -450,6 +467,19 @@ function handleControl(reqUrl, res) {
     return send({ ok: true, added: count, range: [start, state.nextId - 1], eventsCursor: state.eventsCursor });
   }
 
+  // B13 Activity 历史分页: 注入比当前池内最旧 id 更旧的事件(负 id), 供 ?before=<oldest> 拉取
+  if (path === '/_ctl/addOld') {
+    const count = Number(q.get('count') || 0);
+    const minId = Math.min(0, ...state.events.map((e) => e.id));
+    for (let k = 1; k <= count; k++) {
+      state.events.push({
+        id: minId - k, task_id: 't_old', kind: 'archived', title: 'history-' + (minId - k),
+        assignee: 'frontend', created_at: 1758000000 + (minId - k), payload: { n: minId - k },
+      });
+    }
+    return send({ ok: true, added: count, range: [minId - count, minId - 1] });
+  }
+
   if (path === '/_ctl/broadcast') {
     const type = q.get('type') || 'events';
     if (type === 'events') broadcast({ type: 'events', cursor: state.eventsCursor, count: state.events.length });
@@ -549,6 +579,12 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.startsWith('/api/v1/events')) {
+    // B13 §3.5: events 子源失败 → 503(前端应保留旧池 + stale 标注, 不白屏)
+    if (state.failSources.events) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'events unavailable' }));
+      return;
+    }
     const q = getQuery(url);
     const out = handleEvents(q);
     // B.1.4 乱序完成: 若响应标记 stale, 延迟发送以模拟"较旧 catchup 后返回"
