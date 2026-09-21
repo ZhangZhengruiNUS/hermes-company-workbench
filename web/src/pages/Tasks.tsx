@@ -141,7 +141,7 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
       {/* toolbar — 快速视图 tabs + 模式切换 */}
       <div className="flex flex-wrap items-center gap-2">
         {/* quick tabs */}
-        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass" role="tablist" aria-label="任务视图">
+        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass relative" role="tablist" aria-label="任务视图">
           {([
             { k: "active" as TaskQuick, label: "当前工作", ico: <Layers size={13} /> },
             { k: "done" as TaskQuick, label: "近期完成", ico: <CheckCheck size={13} /> },
@@ -168,7 +168,7 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
         <div className="flex-1" />
 
         {/* mode toggle — board/list */}
-        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass" role="group" aria-label="视图模式">
+        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass relative" role="group" aria-label="视图模式">
           <button
             onClick={() => toggleMode("board")}
             aria-pressed={mode === "board"}
@@ -189,7 +189,7 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
       </div>
 
       {/* filter bar — 组合筛选 */}
-      <div className="cmd-glass rounded-[var(--radius-ctl)] px-3 py-2 flex flex-wrap items-center gap-2">
+      <div className="cmd-glass rounded-[var(--radius-ctl)] px-3 py-2 flex flex-wrap items-center gap-2 relative">
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
           <input
@@ -240,8 +240,8 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
           value={f.project}
           onChange={(e) => setF((prev) => ({ ...prev, project: e.target.value }))}
           aria-label="按项目筛选"
-          className="rounded-[var(--radius-ctl)] px-2.5 py-1.5 text-[12.5px] outline-none"
-          style={{ background: "rgba(0,0,0,0.18)", border: "1px solid var(--border-soft)", color: "var(--text-1)" }}
+          className="rounded-[var(--radius-ctl)] px-2.5 py-1.5 text-[12.5px] outline-none max-w-[200px]"
+          style={{ background: "rgba(0,0,0,0.18)", border: "1px solid var(--border-soft)", color: "var(--text-1)", textOverflow: "ellipsis" }}
         >
           <option value="">全部任务</option>
           <option value="__none__">独立任务(无项目)</option>
@@ -343,10 +343,10 @@ function TaskCard({ t, projName, onOpenTask }: { t: Task; projName: Map<string, 
       style={{ background: "var(--surface-solid)", border: "1px solid var(--border-soft)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)" }}
     >
       <div className="text-[12.5px] font-medium leading-snug mb-1.5 line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</div>
-      <div className="flex items-center gap-1.5 text-[10.5px]">
-        {t.assignee && <span className="shrink-0" style={{ color: "var(--text-3)" }}>{t.assignee}</span>}
-        {proj && <span className="shrink-0 px-1 py-0.5 rounded" style={{ background: "var(--surface-1)", color: "var(--text-3)" }}>{proj}</span>}
-        {tag && <span className="shrink-0 px-1 py-0.5 rounded" style={{ background: "var(--surface-1)", color: "var(--text-3)" }}>{tag}</span>}
+      <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] min-w-0">
+        {t.assignee && <span className="shrink-0 truncate max-w-[80px]" style={{ color: "var(--text-3)" }}>{t.assignee}</span>}
+        {proj && <span className="shrink-0 px-1 py-0.5 rounded truncate max-w-[120px] overflow-hidden" title={proj} style={{ background: "var(--surface-1)", color: "var(--text-3)" }}>{proj}</span>}
+        {tag && <span className="shrink-0 px-1 py-0.5 rounded truncate max-w-[90px] overflow-hidden" title={tag} style={{ background: "var(--surface-1)", color: "var(--text-3)" }}>{tag}</span>}
         <span className="ml-auto shrink-0 tabular-nums" style={{ color: "var(--text-3)" }}>{when}</span>
       </div>
       <div className="mt-1"><Capsule color={m.color}>{m.label}</Capsule></div>

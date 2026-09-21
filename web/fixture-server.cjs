@@ -527,6 +527,15 @@ function handleControl(reqUrl, res) {
     return send({ ok: true, added: count, range: [minId - count, minId - 1] });
   }
 
+  // UI Quality Gate 检查D: 注入 worst-case 超长动态文本(任务标题/项目名), 供 verify-geometry 断言
+  if (path === '/_ctl/worstCase') {
+    const LONGT = '执行: 特别长中英混合任务标题 ' + '阶段'.repeat(40) + ' ' + 'A'.repeat(180) + ' — 验证截断与内部溢出';
+    const LONGP = 'Aurora Glass 超长项目名称 ' + 'X'.repeat(140) + ' — 验证项目名截断';
+    if (state.tasks[0]) state.tasks[0].title = LONGT;
+    if (state.projects[0]) state.projects[0].name = LONGP;
+    return send({ ok: true, taskTitleLen: LONGT.length, projectNameLen: LONGP.length });
+  }
+
   if (path === '/_ctl/broadcast') {
     const type = q.get('type') || 'events';
     if (type === 'events') broadcast({ type: 'events', cursor: state.eventsCursor, count: state.events.length });

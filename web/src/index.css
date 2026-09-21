@@ -98,7 +98,8 @@ body {
 /* ============ Surface A — Floating Command Glass ============ */
 /* Topbar / Sidebar / Search / Drawer Header: 高透明+强blur+细亮边+顶部折射高光 */
 .cmd-glass {
-  position: relative;
+  /* 视觉材质 class: 只负责 background/backdrop-filter/border/shadow/highlight.
+     UI Quality Gate: 禁止在此携带 position/layout positioning, 位置由使用组件显式声明(sticky/fixed/relative) */
   background: var(--surface-1);
   backdrop-filter: blur(22px) saturate(150%);
   -webkit-backdrop-filter: blur(22px) saturate(150%);
@@ -208,8 +209,20 @@ body {
   background: var(--surface-1);
   backdrop-filter: blur(8px);
   white-space: nowrap;
+  /* UI Quality Gate: 动态文本边界 — 胶囊须可被父级约束收缩, 文字不越界.
+     min-width:0 允许 flex 子项收缩. 注意: 禁止在此写未分层(max-width)约束,
+     否则会覆盖 Tailwind 的 max-w-* utility(未分层 CSS 优先于 @layer), 令长值撑破边界.
+     具体封顶宽度由使用组件以 max-w-* + pill-text ellipsis 声明. */
+  min-width: 0;
 }
-.pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+/* 胶囊内可截断文本容器: 长动态值(如 model id)经 flex 收缩 + ellipsis 截断, 不撑破胶囊边界 */
+.pill .pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* focus-visible */
 :focus-visible {

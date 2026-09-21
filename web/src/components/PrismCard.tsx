@@ -35,11 +35,12 @@ export function PrismCard({ children, className = "", style, onClick, role, aria
   );
 }
 
-export function Capsule({ label, color, children, title }: { label?: string; color?: string; children?: ReactNode; title?: string }) {
+export function Capsule({ label, color, children, title, className }: { label?: string; color?: string; children?: ReactNode; title?: string; className?: string }) {
   return (
-    <span className="pill" title={title} style={color ? { color, borderColor: color + "44" } : undefined}>
+    <span className={`pill ${className || ""}`} title={title} style={color ? { color, borderColor: color + "44" } : undefined}>
       {color && <span className="dot" style={{ background: color }} />}
-      {label ?? children}
+      {/* 文本包在 pill-text 容器: 长动态值经 flex 收缩 + ellipsis 截断, 不撑破胶囊边界 (UI Quality Gate) */}
+      <span className="pill-text">{label ?? children}</span>
     </span>
   );
 }

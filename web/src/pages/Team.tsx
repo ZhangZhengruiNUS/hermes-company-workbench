@@ -1,10 +1,11 @@
 // Team 页 — 双 tab(成员/组织) + 成员卡 + 只读成员抽屉(SOUL/Skills/配置)
 // 语义基准: v5_template.html L1448-1511 (renderTeam/openMember) + L1683-1696 (双 tab 切换)
 // 只读边界(§4.5): 本轮不实现编辑/解锁/写操作; 抽屉为纯只读, 复制不引用 TaskDetailDrawer
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { PrismCard } from "../components/PrismCard";
 import { Capsule } from "../components/PrismCard";
 import { EmptyState, SectionTitle } from "../components/glass";
+import { DrawerShell } from "../components/Drawer";
 import { api, type BoardData, type Task } from "../lib/api";
 import { fmtTs } from "../lib/board";
 import { X, Loader, AlertTriangle } from "lucide-react";
@@ -95,86 +96,37 @@ interface TeamDrawerProps {
   onClose: () => void;
 }
 function TeamDrawer({ profile, onClose }: TeamDrawerProps) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const prevFocusRef = useRef<HTMLElement | null>(null);
-
   const open = !!profile;
-
-  // 焦点管理: 打开聚焦关闭按钮, 关闭归还焦点(复制 TaskDetailDrawer)
-  useEffect(() => {
-    if (open) {
-      prevFocusRef.current = document.activeElement as HTMLElement;
-      requestAnimationFrame(() => closeRef.current?.focus());
-    } else if (prevFocusRef.current) {
-      prevFocusRef.current.focus();
-    }
-  }, [open]);
-
-  // Escape 关闭
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
   if (!profile) return null;
 
   const name = profile.name;
   const display = profile.display_name || name;
 
   return (
-    <>
-      {/* overlay */}
-      <div
-        className="fixed inset-0 z-40 transition-opacity duration-250"
-        style={{
-          background: "rgba(0,0,0,0.45)",
-          backdropFilter: "blur(4px)",
-          opacity: open ? 1 : 0,
-        }}
-        onClick={onClose}
-        aria-hidden
-      />
-      {/* drawer */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`成员详情: ${display}`}
-        className="fixed top-0 right-0 h-full z-50 flex flex-col transition-transform duration-250 cmd-glass"
-        style={{
-          width: "min(480px, 100vw)",
-          transform: "translateX(0)",
-          borderLeft: "1px solid var(--border-mid)",
-          boxShadow: "-12px 0 48px -20px rgba(0,0,0,0.55)",
-          overflow: "hidden",
-        }}
-      >
-        {/* header */}
-        <div className="flex items-start gap-2 px-5 pt-5 pb-3 shrink-0" style={{ borderBottom: "1px solid var(--border-soft)" }}>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <MemberAvatar name={name} fallback={display.slice(0, 1)} />
-              <span className="text-[11px] font-mono" style={{ color: "var(--text-3)" }}>{name}</span>
-            </div>
-            <h2 className="text-[16px] font-semibold m-0 truncate" style={{ color: "var(--text-1)" }}>
-              {display} · 实时数据
-            </h2>
+    <DrawerShell open={open} onClose={onClose} label={`成员详情: ${display}`}>
+      {/* header */}
+      <div className="flex items-start gap-2 px-5 pt-5 pb-3 shrink-0" style={{ borderBottom: "1px solid var(--border-soft)" }}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <MemberAvatar name={name} fallback={display.slice(0, 1)} />
+            <span className="text-[11px] font-mono" style={{ color: "var(--text-3)" }}>{name}</span>
           </div>
-          <button
-            ref={closeRef}
-            onClick={onClose}
-            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-colors"
-            style={{ background: "var(--surface-1)", border: "1px solid var(--border-soft)", color: "var(--text-2)", cursor: "pointer" }}
-            aria-label="关闭详情"
-          >
-            <X size={15} />
-          </button>
+          <h2 className="text-[16px] font-semibold m-0 truncate" style={{ color: "var(--text-1)" }}>
+            {display} · 实时数据
+          </h2>
         </div>
-
-        <TeamDrawerBody profile={profile} />
+        <button
+          onClick={onClose}
+          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-colors"
+          style={{ background: "var(--surface-1)", border: "1px solid var(--border-soft)", color: "var(--text-2)", cursor: "pointer" }}
+          aria-label="关闭详情"
+        >
+          <X size={15} />
+        </button>
       </div>
-    </>
+
+      <TeamDrawerBody profile={profile} />
+    </DrawerShell>
   );
 }
 
@@ -328,12 +280,12 @@ function memberCardInfo(mine: Task[]): MemberCardInfo {
   let summaryKind: MemberCardInfo["summaryKind"] = "none";
   if (open.length > 0) {
     const cur = open[0];
-    summary = `当前任务: ${(cur.title || "").slice(0, 44)}${(cur.title || "").length > 44 ? "…" : ""}`;
+    summary = `当前任务: ${cur.title || ""}`;
     summaryKind = "current";
   } else if (done.length > 0) {
     // 最近完成 = 按 completed_at 最新的 done(旧版 L1468-1469)
     const recent = done.slice().sort((a, b) => (Number(b.completed_at || 0)) - (Number(a.completed_at || 0)))[0];
-    summary = `最近任务: ${(recent.title || "").slice(0, 44)}${(recent.title || "").length > 44 ? "…" : ""}`;
+    summary = `最近任务: ${recent.title || ""}`;
     summaryKind = "recent";
   } else {
     summary = "暂无任务记录";
@@ -413,14 +365,14 @@ export function Team({ data }: Props) {
                           <span className="text-[11px] font-mono block truncate" style={{ color: "var(--text-3)" }}>{p.name}</span>
                         </div>
                       </div>
-                      <div className="mt-2 text-[12px]" style={{ color: info.summaryKind === "none" ? "var(--text-3)" : "var(--text-2)" }}>
+                      <div className="mt-2 text-[12px] line-clamp-2 min-w-0 break-words" title={info.summary} style={{ color: info.summaryKind === "none" ? "var(--text-3)" : "var(--text-2)" }}>
                         {info.summary}
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                        <span className="flex-1 min-w-0 text-[11px] truncate" style={{ color: "var(--text-3)" }}>
                           {info.openN > 0 ? `${info.openN} 项执行中 · ` : ""}{info.finN} 项完成
                         </span>
-                        <Capsule title="默认模型">默认模型 {p.model || "—"}</Capsule>
+                        <Capsule title={`默认模型: ${p.model || "—"}`} className="max-w-[190px] shrink-0">默认模型 {p.model || "—"}</Capsule>
                       </div>
                     </PrismCard>
                   );

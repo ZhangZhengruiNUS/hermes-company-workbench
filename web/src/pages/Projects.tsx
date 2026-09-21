@@ -83,11 +83,11 @@ function ProjectCard({
   }, [tasks, p.id, events]);
   const latest = projectEvents[0];
   const recent = latest
-    ? `${EVENT_KIND[latest.kind || ""] || latest.kind || "事件"} · ${(latest.task_title || "").slice(0, 22)} ${latest.ts ? fmtTs(Math.floor(new Date(latest.ts).getTime() / 1000)) : ""}`
+    ? `${EVENT_KIND[latest.kind || ""] || latest.kind || "事件"} · ${latest.task_title || ""} ${latest.ts ? fmtTs(Math.floor(new Date(latest.ts).getTime() / 1000)) : ""}`
     : "—";
 
   const currentLine = s.activeTasks[0]
-    ? `当前: ${s.activeTasks[0].title.slice(0, 30)}`
+    ? `当前: ${s.activeTasks[0].title}`
     : "无进行中任务";
 
   return (
@@ -152,7 +152,7 @@ function ProjectCard({
 
       {/* meta: 当前推进 + 最近活动 */}
       <div className="text-[11px] leading-relaxed min-w-0" style={{ color: "var(--text-3)" }}>
-        <div className="truncate">{currentLine}</div>
+        <div className="truncate" title={currentLine}>{currentLine}</div>
         <div className="truncate" title={recent}>最近活动: {recent}</div>
       </div>
 
