@@ -48,6 +48,12 @@ const state = {
   sourceOkFalse: {},
   projectsOk: true,
   projectsError: '',
+  // B14 team: 单成员实时数据(soul/skills/config) + 故障开关
+  profileLive: {},
+  avatarMiss: {},       // name -> true => /avatars/<name>.png 返回 404
+  soulFail: {},         // name -> true => GET soul 返回 500
+  skillFail: {},        // name -> true => GET skills 返回 500
+  configFail: {},       // name -> true => GET config 返回 500
   // B.1.4 乱序完成: 延迟特定 after 的 events-after 响应, 返回一个更旧的(更小)游标,
   // 模拟"较旧 catchup 后返回" — 断言前端 evCursor 不因此回退(Math.max 单调)
   delayAfter: null,
@@ -364,6 +370,47 @@ function handleProfiles() {
   return { ok: true, data: state.profiles };
 }
 
+// B14 单成员实时数据: GET /api/v1/profiles/<name>/{soul,skills,config}
+// 语义逐字迁移 v5_template loadWbTab(paintSoul/paintSkills/paintConfig)
+function profileDefaults(name) {
+  const p = state.profiles.find((x) => x.name === name);
+  return {
+    soul: {
+      content: `# ${name} 的 SOUL(默认 fixture)\n\n职责由 role 决定。本段为 fixture-server 生成的占位内容。`,
+      mtime: 1758100000,
+      sha256: 'abcdef1234567890deadbeef' + name,
+    },
+    skills: [
+      { name: 'kanban-worker', enabled: true },
+      { name: 'company-protocol', enabled: true },
+      { name: 'claude-code', enabled: false },
+      { name: 'excalidraw', enabled: true },
+    ],
+    config: {
+      model: p ? p.model : 'gpt-4o',
+      config: { temperature: 0.2, top_p: 0.9, max_tokens: 4096 },
+    },
+  };
+}
+
+function handleProfileResource(name, tab) {
+  const live = state.profileLive[name];
+  const defs = profileDefaults(name);
+  const failFlags = { soul: state.soulFail, skills: state.skillFail, config: state.configFail };
+  if (failFlags[tab] && failFlags[tab][name]) {
+    return { __status: 500, ok: false, error: tab + ' endpoint 500 (fixture)' };
+  }
+  const val = live && live[tab] !== undefined ? live[tab] : defs[tab];
+  if (tab === 'skills') {
+    return { ok: true, data: Array.isArray(val) ? val : [] };
+  }
+  if (tab === 'config') {
+    return { ok: true, data: val || { model: defs.config.model, config: {} } };
+  }
+  // soul
+  return { ok: true, data: val || defs.soul };
+}
+
 function handleTaskDetail(id) {
   state.stats.taskDetail++;
   const t = state.tasks.find((x) => x.id === id);
@@ -549,6 +596,33 @@ function handleControl(reqUrl, res) {
     return send({ ok: true, profile: p });
   }
 
+  // B14: 设置单成员实时数据 profileLive[<name>][<tab>] = <jsonValue>
+  if (path === '/_ctl/setProfileLive') {
+    const name = q.get('name');
+    const tab = q.get('tab');
+    const value = q.get('value');
+    if (!name || !tab || value == null) return send({ ok: false, error: 'need name/tab/value' });
+    state.profileLive[name] = state.profileLive[name] || {};
+    state.profileLive[name][tab] = JSON.parse(value);
+    return send({ ok: true, profileLive: state.profileLive[name] });
+  }
+  // B14: avatar 404 开关 avatarMiss[<name>] = on?true:false
+  if (path === '/_ctl/avatarMiss') {
+    const name = q.get('name');
+    if (!name) return send({ ok: false, error: 'need name' });
+    state.avatarMiss[name] = q.get('on') !== '0';
+    return send({ ok: true, avatarMiss: state.avatarMiss });
+  }
+  // B14: 成员资源 500 开关 {soul,skill,config}Fail[<name>] = on?true:false
+  if (path === '/_ctl/memberFail') {
+    const name = q.get('name');
+    const which = q.get('which');
+    if (!name || !['soul', 'skill', 'config'].includes(which || '')) return send({ ok: false, error: 'need name + which in soul/skill/config' });
+    const map = which === 'soul' ? state.soulFail : which === 'skill' ? state.skillFail : state.configFail;
+    map[name] = q.get('on') !== '0';
+    return send({ ok: true, [which + 'Fail']: map });
+  }
+
   if (path === '/_ctl/stats') return send(state.stats);
 
   return send({ ok: false, error: 'unknown control: ' + path });
@@ -609,6 +683,20 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return;
   }
 
+  if (url.startsWith('/api/v1/profiles/')) {
+    // B14: 单成员资源 /api/v1/profiles/<name>/{soul,skills,config}
+    const rest = decodeURIComponent(url.replace('/api/v1/profiles/', '').split('?')[0]);
+    const [name, tab] = rest.split('/');
+    if (name && (tab === 'soul' || tab === 'skills' || tab === 'config')) {
+      const out = handleProfileResource(name, tab);
+      if (out.__status) { res.writeHead(out.__status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return;
+    }
+    const out = handleProfiles();
+    if (out.__status) { res.writeHead(out.__status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return;
+  }
+
   if (url.startsWith('/api/v1/profiles')) {
     const out = handleProfiles();
     if (out.__status) { res.writeHead(out.__status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(out)); return; }
@@ -616,6 +704,8 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.startsWith('/avatars/')) {
+    const name = decodeURIComponent(url.replace('/avatars/', '').replace(/\.png.*$/, ''));
+    if (state.avatarMiss[name]) { res.writeHead(404, { 'Content-Type': 'image/png' }); res.end(); return; }
     res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(PIXEL); return;
   }
 
