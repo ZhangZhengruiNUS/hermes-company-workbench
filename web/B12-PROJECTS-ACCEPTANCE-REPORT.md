@@ -1,7 +1,8 @@
 # Hermes Aurora — Phase C · B12 项目页 验收报告
 
 日期: 2026-09-21
-交付版本: commit `a7f0c1b` + B12 工作树 (bundle `assets/index-B1JVgk8N.js`)
+LOCAL_SOURCE_SHA: `a7f0c1b`  REMOTE_SOURCE_SHA: `dc0099e`  (与本卡基线一致)
+交付版本: commit `d6a880e3` (bundle `assets/index-B1JVgk8N.js`); 远端 origin/main 推送至 `bc012eb0` (parent `dc0099ed`, 与本地 a7f0c1b tree 等价, 连续)
 部署位置: https://workbench.zgzwr.site/next/
 验收驱动: fixture-server(mock /api + /_ctl + SSE) → 真实 /next/ 构建 (web/dist)
 
