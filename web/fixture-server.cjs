@@ -46,6 +46,8 @@ const state = {
   inject: null,
   failSources: {},
   sourceOkFalse: {},
+  projectsOk: true,
+  projectsError: '',
   // B.1.4 乱序完成: 延迟特定 after 的 events-after 响应, 返回一个更旧的(更小)游标,
   // 模拟"较旧 catchup 后返回" — 断言前端 evCursor 不因此回退(Math.max 单调)
   delayAfter: null,
@@ -119,6 +121,89 @@ function buildBaseline() {
   return { tasks, projects, profiles, automations };
 }
 
+// B12 项目页验收场景 — 供 /_ctl/projScenario?name= 控制
+// 每个场景完整重建 tasks/projects/events, 使断言确定性:
+//   error   → projects_ok=false, 需显「项目数据源不可用」不得伪装空/正常
+//   empty   → 空项目数组, 需显「暂无项目」
+//   notasks → 有项目但 0 任务, 需显「暂无任务」, 不渲染进度条/徽章
+//   alldone → done 全部完成 + archived, 需显「关联任务已全部完成 · 历史归档 N 项」, 且不得出现「100%」
+//   mixed   → todo/ready/running/blocked/done 混合, 徽章计数与公式 title 断言
+function applyProjScenario(name) {
+  const B = 1758000000;
+  const resetState = () => {
+    state.events = [];
+    state.nextId = 1;
+    state.eventsCursor = 0;
+    state.sseOn = true;
+    state.stall = false;
+    state.inject = null;
+    state.failSources = {};
+    state.sourceOkFalse = {};
+    state.delayAfter = null;
+    state.pendingBroadcasts = [];
+    state.projectsOk = true;
+    state.projectsError = '';
+    state.stats = { eventsAfter: [], desc: 0, board: 0, automations: 0, profiles: 0, streamConnections: 0, taskDetail: 0 };
+  };
+  const ev = (id, task_id, kind, title) => ({ id, task_id, kind, title, assignee: 'frontend', created_at: B + id, payload: { n: id } });
+  const task = (id, title, status, pid, opts = {}) => ({
+    id, title, status, assignee: opts.assignee ?? null, project_id: pid, priority: opts.priority ?? 'med',
+    created_at: opts.created_at ?? B, started_at: opts.started_at ?? null, completed_at: opts.completed_at ?? null,
+    has_run: opts.has_run ?? false, result_preview: opts.result_preview ?? null,
+  });
+
+  switch (name) {
+    case 'error': {
+      resetState();
+      state.projects = [{ id: 'proj_aurora', name: 'Aurora Glass', description: 'Phase B 施工', color: '#6aa8ff', created_at: B - 5000 }];
+      state.tasks = [task('t_alpha', '执行: Phase B 施工', 'running', 'proj_aurora', { assignee: 'frontend', priority: 'high', started_at: B + 10, has_run: true, result_preview: '推进中' })];
+      state.projectsOk = false;
+      state.projectsError = '数据库连接失败';
+      return;
+    }
+    case 'empty': {
+      resetState();
+      state.projects = [];
+      state.tasks = [];
+      return;
+    }
+    case 'notasks': {
+      resetState();
+      state.projects = [{ id: 'proj_alpha', name: 'Alpha', description: '无任务项目', color: '#6aa8ff', created_at: B - 100 }];
+      state.tasks = [];
+      return;
+    }
+    case 'alldone': {
+      resetState();
+      state.projects = [{ id: 'proj_beta', name: 'Beta', description: '全部完成', color: '#40d69b', created_at: B - 100 }];
+      state.tasks = [
+        task('b_done1', '完成: Beta 任务一', 'done', 'proj_beta', { assignee: 'frontend', created_at: B - 500, started_at: B - 400, completed_at: B - 200, has_run: true, result_preview: '完成' }),
+        task('b_done2', '完成: Beta 任务二', 'done', 'proj_beta', { assignee: 'backend', created_at: B - 600, started_at: B - 500, completed_at: B - 300, has_run: true, result_preview: '完成' }),
+        task('b_arch1', '归档: Beta 旧事', 'archived', 'proj_beta', { assignee: 'researcher', created_at: B - 900, started_at: B - 800, completed_at: B - 700, has_run: true, result_preview: '归档' }),
+      ];
+      state.events = [ev(1, 'b_done1', 'completed', '完成: Beta 任务一'), ev(2, 'b_done2', 'completed', '完成: Beta 任务二')];
+      state.nextId = 3; state.eventsCursor = 2;
+      return;
+    }
+    case 'mixed':
+    default: {
+      resetState();
+      state.projects = [{ id: 'proj_gamma', name: 'Gamma', description: '多状态混合', color: '#ffb454', created_at: B - 100 }];
+      state.tasks = [
+        task('g_todo', '待办: Gamma 待办', 'todo', 'proj_gamma', { assignee: 'archivist', priority: 'low', created_at: B - 10 }),
+        task('g_ready', '就绪: Gamma 就绪', 'ready', 'proj_gamma', { assignee: 'backend', created_at: B - 20 }),
+        task('g_running', '进行中: Gamma 运行', 'running', 'proj_gamma', { assignee: 'frontend', priority: 'high', started_at: B + 5, has_run: true, result_preview: '推进中' }),
+        task('g_block', '阻塞: Gamma 阻塞', 'blocked', 'proj_gamma', { assignee: 'pm', priority: 'high', started_at: B - 2, has_run: true }),
+        task('g_done1', '完成: Gamma 任务一', 'done', 'proj_gamma', { assignee: 'frontend', created_at: B - 50, started_at: B - 40, completed_at: B - 20, has_run: true, result_preview: '完成' }),
+        task('g_done2', '完成: Gamma 任务二', 'done', 'proj_gamma', { assignee: 'backend', created_at: B - 60, started_at: B - 50, completed_at: B - 30, has_run: true, result_preview: '完成' }),
+      ];
+      state.events = [ev(1, 'g_running', 'started', '进行中: Gamma 运行'), ev(2, 'g_done1', 'completed', '完成: Gamma 任务一')];
+      state.nextId = 3; state.eventsCursor = 2;
+      return;
+    }
+  }
+}
+
 // ---------------------------------------------------------------- reset
 function reset(opts) {
   Object.assign(state, buildBaseline());
@@ -133,6 +218,8 @@ function reset(opts) {
   state.inject = null;
   state.failSources = {};
   state.sourceOkFalse = {};
+  state.projectsOk = true;
+  state.projectsError = '';
   state.delayAfter = null;
   state.pendingBroadcasts = [];
   state.stats = { eventsAfter: [], desc: 0, board: 0, automations: 0, profiles: 0, streamConnections: 0, taskDetail: 0 };
@@ -227,8 +314,8 @@ function handleBoard() {
     data: {
       tasks: state.tasks,
       projects: state.projects,
-      projects_ok: true,
-      projects_error: '',
+      projects_ok: state.projectsOk,
+      projects_error: state.projectsError,
       events_cursor: state.eventsCursor,
       fetched_at: Math.floor(Date.now() / 1000),
       counts: statusCounts(state.tasks),
@@ -342,6 +429,12 @@ function handleControl(reqUrl, res) {
   if (path === '/_ctl/reset') {
     reset({ baseline: q.get('baseline') ?? 10, sse: q.get('sse') ?? '1' });
     return send({ ok: true, baseline: state.events.length, eventsCursor: state.eventsCursor, sseOn: state.sseOn });
+  }
+
+  if (path === '/_ctl/projScenario') {
+    const name = q.get('name') || 'mixed';
+    applyProjScenario(name);
+    return send({ ok: true, name, projects: state.projects.map((p) => p.id), tasks: state.tasks.length, projectsOk: state.projectsOk, projectsError: state.projectsError });
   }
 
   if (path === '/_ctl/add') {
