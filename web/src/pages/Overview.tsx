@@ -32,17 +32,30 @@ function ExecutiveStrip({ counts, workN, projN }: { counts: Record<string, numbe
     { label: "完成", value: doneN, color: "var(--status-green)" },
     { label: "项目", value: projN, color: "var(--accent-violet)" },
   ];
+  // 响应式分隔: 桌面 lg 单行 5 格仅竖分隔(第 2 格起 border-l, 同原 divide-x);
+  // 移动 base 双列 + 第 5 格跨行 → 竖分隔在每行第 2 列格子(1,3), 横分隔在 1-2 行格子(0,1,2,3)底边。
+  // 保持既有玻璃拟态分隔线(var(--border-soft), 1px), 不引入新视觉元素。
+  const cellBorders = [
+    "border-b lg:border-b-0",               // 0 col1 r1 (移动底边) / 桌面首格无边框
+    "border-l border-b lg:border-b-0",      // 1 col2 r1
+    "border-b lg:border-b-0 lg:border-l",   // 2 col1 r2 (移动无左边框) / 桌面第3格左边框
+    "border-l border-b lg:border-b-0",      // 3 col2 r2
+    "lg:border-l",                          // 4 移动跨全行无边框 / 桌面末格左边框
+  ];
   return (
-    <div className="cmd-glass rounded-[var(--radius-lg)] relative overflow-hidden">
+    <div className="cmd-glass rounded-[var(--radius-lg)] relative overflow-hidden" data-exec-strip>
       {/* hero 背景微光晕 */}
       <div aria-hidden className="absolute inset-0 pointer-events-none" style={{
         background: "radial-gradient(ellipse 40% 90% at 15% 0%, rgba(110,168,255,0.14), transparent 60%), radial-gradient(ellipse 35% 80% at 85% 100%, rgba(148,124,255,0.12), transparent 60%)",
       }} />
-      <div className="relative flex divide-x">
-        {cells.map((c) => (
+      <div className="relative grid grid-cols-2 lg:grid-cols-5">
+        {cells.map((c, i) => (
           <div
             key={c.label}
-            className="flex-1 px-6 py-5 transition-colors duration-200 hover:bg-[rgba(110,168,255,0.06)]"
+            data-exec-cell
+            data-index={i}
+            data-label={c.label}
+            className={`${cellBorders[i]}${i === 4 ? " col-span-2 lg:col-span-1" : ""} px-6 py-5 transition-colors duration-200 hover:bg-[rgba(110,168,255,0.06)]`}
             style={{ borderColor: "var(--border-soft)" }}
           >
             <div className="flex items-center gap-1.5">

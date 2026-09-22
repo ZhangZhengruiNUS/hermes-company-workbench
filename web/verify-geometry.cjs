@@ -368,6 +368,52 @@ async function main() {
     await openPage('team', { width: 390, height: 844 }, 'light');
     check('E-light390: 浅色390无横向滚动', (await noHScroll()) && (await body()).includes('运营线'), '');
 
+    // ================= F. Overview ExecutiveStrip 五格响应式几何 =================
+    // t_34e85bd7: 修复移动端 390px 第 5 格右缘被父容器 overflow-hidden 裁剪(~10px)。
+    // 设计: 移动 base 双列 + 第 5 格跨行; 桌面 lg 单行 5 格不变。
+    console.log('\n=== F. Overview ExecutiveStrip geometry ===');
+    await ctl('reset?baseline=10');
+
+    // F1 mobile 390px: 五格完整可见且无裁剪
+    await openPage('overview', { width: 390, height: 844 });
+    {
+      const g = await page.evaluate(() => {
+        const strip = document.querySelector('[data-exec-strip]');
+        const cells = Array.from(document.querySelectorAll('[data-exec-cell]')).map((el) => {
+          const r = el.getBoundingClientRect();
+          return { idx: +(el.getAttribute('data-index') || -1), l: r.left, rgt: r.right, w: r.width, h: r.height };
+        });
+        const sr = strip ? strip.getBoundingClientRect() : null;
+        return { count: cells.length, cells, stripR: sr ? sr.right : null, winW: window.innerWidth };
+      });
+      const allWithin = g.cells.length === 5 && g.cells.every((c) => c.rgt <= g.winW + 1 && c.l >= -1 && c.w > 0);
+      check('F1-390: 五格齐全且全部在视口内(无裁剪)', allWithin, g.cells.length === 5 ? `rights=[${g.cells.map((c) => c.rgt.toFixed(0)).join(',')}] winW=${g.winW}` : `count=${g.cells.length}`);
+      check('F1-390: strip 容器右缘不越出视口', g.stripR != null && g.stripR <= g.winW + 1, `stripR=${g.stripR?.toFixed(1)}`);
+      check('F1-390: 布局为两列(非单行5列), 存在多行', new Set(g.cells.map((c) => c.l.toFixed(0))).size >= 2, `cols=${new Set(g.cells.map((c) => c.l.toFixed(0))).size}`);
+      check('F1-390: 第5格(项目)左缘=跨行起始或其后第1列', g.cells.length === 5 && g.cells[4].l >= -1 && g.cells[4].l < g.cells[3].l + 1, `c5l=${g.cells[4]?.l.toFixed(0)} c4l=${g.cells[3]?.l.toFixed(0)}`);
+      check('F1-390: 无文档横向滚动', await noHScroll(), '');
+      await page.screenshot({ path: path.join(OUT, 'geom-exec-390.png') });
+    }
+
+    // F2 desktop 1440: 单行 5 格布局不变, 无裁剪
+    await openPage('overview', { width: 1440, height: 900 });
+    {
+      const g = await page.evaluate(() => {
+        const strip = document.querySelector('[data-exec-strip]');
+        const cells = Array.from(document.querySelectorAll('[data-exec-cell]')).map((el) => {
+          const r = el.getBoundingClientRect();
+          return { idx: +(el.getAttribute('data-index') || -1), l: r.left, rgt: r.right, top: r.top, w: r.width };
+        });
+        const sr = strip ? strip.getBoundingClientRect() : null;
+        return { count: cells.length, cells, stripR: sr ? sr.right : null, stripL: sr ? sr.left : null, winW: window.innerWidth };
+      });
+      const singleRow = g.cells.length === 5 && g.cells.every((c) => Math.abs(c.top - g.cells[0].top) <= 1);
+      check('F2-1440: 五格单行(同 top)', singleRow, g.cells.length === 5 ? `tops=[${g.cells.map((c) => c.top.toFixed(0)).join(',')}]` : `count=${g.cells.length}`);
+      check('F2-1440: 五格按列铺满且末格右缘=容器内容右缘(±1px容器边框)', g.cells.length === 5 && g.stripR != null && Math.abs(g.cells[4].rgt - g.stripR) <= 2, g.cells.length === 5 ? `c5r=${g.cells[4].rgt.toFixed(1)} stripR=${g.stripR?.toFixed(1)}` : `count=${g.cells.length}`);
+      check('F2-1440: 无文档横向滚动', await noHScroll(), '');
+      await page.screenshot({ path: path.join(OUT, 'geom-exec-1440.png') });
+    }
+
     // ================= P5. Drawer interaction =================
     console.log('\n=== P5. Drawer interaction ===');
     await ctl('reset?baseline=10');
