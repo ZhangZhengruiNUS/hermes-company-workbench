@@ -208,7 +208,12 @@ body {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  z-index: 1;
+  /* 层级契约(0922 收口): 底色 -> 光斑 -> 正文/图标/控件。
+     CSS 绘制顺序: 同层叠上下文中 z-index:0 定位元素绘制在普通流行内
+     文字之后(即光斑在上)。因此契约由两措施共同保证, 不强加全局 position:
+     1) 宿主内主内容 wrapper 显式 relative z-[1](逐宿主核对, 见下表注释);
+     2) 光斑始终低透明度 color-mix, 兜底不漂白文字。 */
+  z-index: 0;
   opacity: 0;
   transition: opacity 200ms ease;
   background: radial-gradient(
@@ -241,7 +246,10 @@ body {
 /* ============ Surface C — Quiet Data Surface ============ */
 /* 任务表格/长文本/Events: 更实更少 blur */
 .quiet-surface {
-  position: relative; /* 指针柔光 ::after 的 containing block (UI Quality Gate: 显式定位, 不影响布局) */
+  /* 注意: 不在此处写 position —— 材质与定位分离(0922 收口)。
+     ::after 光斑为 absolute, 需要 containing block 的宿主由其自身
+     的实际布局决定是否提供 relative/absolute(如 prism-card 自带 relative)。
+     对布局流内宿主, 光斑用 normal-flow 友好方式绘制(见 ::after 注释)。 */
   background: var(--surface-solid-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);

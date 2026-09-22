@@ -83,12 +83,12 @@ export function initPointerLight(): PointerLightHandle {
   }
 
   // 淡出宿主(移除点亮状态, 由 CSS transition 平滑淡出)。
+  // 淡出期间保留最后 --mx/--my: 若立即清除, 光斑会在 opacity 过渡期间跳回
+  // CSS 默认 50%/0%, 表现为"旧光斑跳到顶部"。新宿主点亮时会覆盖自己的变量,
+  // 故残留旧值只存在于已淡出的宿主上, 无副作用。
   function fadeOut(host: HTMLElement | null) {
     if (!host) return;
     host.classList.remove("pl-on");
-    // 清除遗留局部坐标, 避免下一次快速回笔时闪烁旧值。
-    host.style.removeProperty("--mx");
-    host.style.removeProperty("--my");
   }
 
   // 点亮宿主并写入局部坐标。
@@ -149,8 +149,11 @@ export function initPointerLight(): PointerLightHandle {
     schedule();
   }
 
-  // 指针离开页面 / 窗口失焦 / 取消: 淡出并清空跟随状态, 避免光斑残留。
+  // 指针离开页面 / 窗口失焦 / 取消: 淡出并使指针位置失效 + 取消待执行帧,
+  // 防止已排队的 rAF 在离开后用旧坐标重新点亮(残留/闪亮)。
   function onPointerLeave() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    hasPos = false;
     if (activeHost) fadeOut(activeHost);
     activeHost = null;
     applyBg(false);
@@ -163,9 +166,11 @@ export function initPointerLight(): PointerLightHandle {
     schedule();
   }
 
-  // 页面隐藏: 暂停跟随并淡出(省电)。
+  // 页面隐藏: 暂停跟随并淡出(省电); 同时取消待执行帧并使位置失效。
   function onVisibility() {
     if (document.hidden) {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      hasPos = false;
       if (activeHost) fadeOut(activeHost);
       activeHost = null;
       applyBg(false);
@@ -198,6 +203,8 @@ export function initPointerLight(): PointerLightHandle {
   window.addEventListener("scroll", onScroll, { passive: true, capture: true });
   document.addEventListener("pointerleave", onPointerLeave);
   document.addEventListener("visibilitychange", onVisibility);
+  // 兜底: 切换应用/窗口失焦时 pointerleave 不一定触发, 用 blur 清理。
+  window.addEventListener("blur", onPointerLeave);
   // 兜底: 鼠标从整个文档移出到外部时, 部分浏览器不触发 pointerleave, 用 mouseleave 兜底。
   document.documentElement.addEventListener("mouseleave", onPointerLeave);
 
@@ -205,6 +212,7 @@ export function initPointerLight(): PointerLightHandle {
   cleanup.push(() =>
     document.documentElement.removeEventListener("mouseleave", onPointerLeave)
   );
+  cleanup.push(() => window.removeEventListener("blur", onPointerLeave));
 
   // 初始化背景层引用并默认淡出。
   getBgLayer();
