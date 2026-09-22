@@ -141,7 +141,7 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
       {/* toolbar — 快速视图 tabs + 模式切换 */}
       <div className="flex flex-wrap items-center gap-2">
         {/* quick tabs */}
-        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass relative" role="tablist" aria-label="任务视图">
+        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass relative" role="tablist" aria-label="任务视图" data-pointer-light="glass">
           {([
             { k: "active" as TaskQuick, label: "当前工作", ico: <Layers size={13} /> },
             { k: "done" as TaskQuick, label: "近期完成", ico: <CheckCheck size={13} /> },
@@ -168,7 +168,7 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
         <div className="flex-1" />
 
         {/* mode toggle — board/list */}
-        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass relative" role="group" aria-label="视图模式">
+        <div className="flex rounded-[var(--radius-ctl)] overflow-hidden cmd-glass relative" role="group" aria-label="视图模式" data-pointer-light="glass">
           <button
             onClick={() => toggleMode("board")}
             aria-pressed={mode === "board"}
@@ -189,7 +189,7 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
       </div>
 
       {/* filter bar — 组合筛选 */}
-      <div className="cmd-glass rounded-[var(--radius-ctl)] px-3 py-2 flex flex-wrap items-center gap-2 relative">
+      <div className="cmd-glass rounded-[var(--radius-ctl)] px-3 py-2 flex flex-wrap items-center gap-2 relative" data-pointer-light="glass">
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
           <input

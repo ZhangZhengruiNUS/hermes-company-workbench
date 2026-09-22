@@ -167,30 +167,81 @@ body {
       rgba(27, 170, 160, 0.50) 100%
     ) border-box;
 }
-.prism-card::after {
-  /* cursor prism highlight — hover 时 5-10% 亮度 */
+/* 指针柔光由全局 [data-pointer-light]::after 统一绘制(见下方 Pointer Light 段),
+   PrismCard 同时携带 data-pointer-light="glass", 由该层接管跟随光斑;
+   .prism-card 本身已 overflow:hidden, 光斑经 border-radius: inherit 裁剪到卡片圆角. */
+@media (hover: hover) {
+  .prism-card:hover { transform: translateY(-2px); }
+}
+
+/* ============ Pointer Light — 全局指针柔光 (Aurora Pointer Light) ============ */
+/* 数据源: web/src/lib/pointerLight.ts 安装单一 document pointermove 监听,
+   命中最近的 [data-pointer-light] 宿主并写入 --mx/--my(视口→宿主局部坐标),
+   点亮状态由宿主上 .pl-on 类控制(淡入淡出走 transition).
+   仅一层光斑(当前宿主) + 一个页面背景柔光层, 不做每卡循环. */
+
+/* —— 页面背景柔光层(controller 只移动一个固定尺寸渐变层 + 切 opacity, 不整屏重绘) —— */
+.pointer-bg-light {
+  position: fixed;
+  top: 0; left: 0;
+  width: 480px; height: 480px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  will-change: transform, opacity;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent-blue) 3.2%, transparent), transparent 62%);
+  filter: blur(24px);
+}
+:root.light .pointer-bg-light {
+  background: radial-gradient(circle, color-mix(in srgb, #7a8fb0 3.4%, transparent), transparent 62%);
+}
+
+/* —— 宿主跟随光斑: 伪元素基于 --mx/--my 绘制, 光斑在底色之上、正文之下(低透明度不漂白) —— */
+/* 命中宿主 = 显式 data-pointer-light(glass|nav|quiet) 或 语义类 quiet-surface(隐式 quiet 档,
+   由 controller 统一识别, 空态/表格不必逐处重复标注). */
+[data-pointer-light]::after,
+.quiet-surface::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: radial-gradient(
-    260px circle at var(--mx, 50%) var(--my, 0%),
-    rgba(110, 168, 255, 0.20),
-    transparent 65%
-  );
-  opacity: 0;
-  transition: opacity 250ms ease;
   pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  background: radial-gradient(
+    var(--pl-size, 300px) circle at var(--mx, 50%) var(--my, 0%),
+    color-mix(in srgb, var(--pl-color, var(--accent-blue)) var(--pl-alpha, 18%), transparent),
+    transparent 68%
+  );
 }
-@media (hover: hover) {
-  .prism-card:hover { transform: translateY(-2px); }
-  .prism-card:hover::before { opacity: 1; }
-  .prism-card:hover::after { opacity: 1; }
+[data-pointer-light].pl-on::after,
+.quiet-surface.pl-on::after { opacity: 1; }
+
+/* 强度档位: 由 data-pointer-light 取值 -> --pl-alpha / --pl-size 默认.
+   glass 基准; nav 工具栏/统计 70-90%; quiet 空态/表格 35-55%. */
+[data-pointer-light="glass"]::after { --pl-alpha: 18%; --pl-size: 300px; }
+[data-pointer-light="nav"]::after   { --pl-alpha: 13%; --pl-size: 260px; }
+[data-pointer-light="quiet"]::after,
+.quiet-surface::after               { --pl-alpha: 8%;  --pl-size: 260px; }
+/* 浅色主题: 低强度冷蓝灰反光, 不用纯白洗白页面 */
+:root.light [data-pointer-light]::after,
+:root.light .quiet-surface::after   { --pl-color: #7a8fb0; }
+
+/* reduced-motion 下 controller 不启动(见 pointerLight.ts), 这里兜底把光斑层也隐藏,
+   保留静态 hover/focus(由各组件的 transition-colors / focus-visible 提供). */
+@media (prefers-reduced-motion: reduce) {
+  [data-pointer-light]::after,
+  .quiet-surface::after { opacity: 0 !important; }
+  .pointer-bg-light { display: none; }
 }
 
 /* ============ Surface C — Quiet Data Surface ============ */
 /* 任务表格/长文本/Events: 更实更少 blur */
 .quiet-surface {
+  position: relative; /* 指针柔光 ::after 的 containing block (UI Quality Gate: 显式定位, 不影响布局) */
   background: var(--surface-solid-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);

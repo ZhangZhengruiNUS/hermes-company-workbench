@@ -31,7 +31,7 @@ interface Props {
 
 export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search, onSearch, onOpenMobileNav }: Props) {
   return (
-    <header className="cmd-glass rounded-[var(--radius-lg)] flex items-center gap-3 px-4 py-2.5 mb-5 sticky top-3 z-30">
+    <header className="cmd-glass rounded-[var(--radius-lg)] flex items-center gap-3 px-4 py-2.5 mb-5 sticky top-3 z-30" data-pointer-light="nav">
       {/* 顶部微弱 white highlight */}
       <div
         aria-hidden
@@ -66,8 +66,8 @@ export function Topbar({ view, liveState, unlocked, theme, onToggleTheme, search
 
       <div className="flex-1" />
 
-      {/* 搜索 — command palette 风格 */}
-      <div className="relative hidden sm:block">
+      {/* 搜索 — command palette 风格 (较弱的 quiet 档响应) */}
+      <div className="relative hidden sm:block" data-pointer-light="quiet">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
         <input
           value={search}

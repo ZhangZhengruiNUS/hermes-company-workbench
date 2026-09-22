@@ -42,11 +42,16 @@ export function Card({
 
 export function Pill({ label, color, children }: { label?: string; color?: string; children?: ReactNode }) {
   return (
-    <span className="pill" style={color ? { color, borderColor: color + "44" } : undefined}>
+    <span className="pill" style={color ? { color, borderColor: colorMix(color, 27) } : undefined}>
       {color && <span className="dot" style={{ background: color }} />}
       {label ?? children}
     </span>
   );
+}
+
+// 颜色可能是 CSS 变量(var(--xxx)), 不能拼 hex alpha 后缀; 统一 color-mix 带透明度(对照 Pill alpha 约定)。
+function colorMix(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 }
 
 export function SectionTitle({ children, extra }: { children: ReactNode; extra?: ReactNode }) {

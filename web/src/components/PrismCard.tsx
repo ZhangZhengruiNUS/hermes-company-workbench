@@ -1,5 +1,8 @@
-// Prism Card — cursor prism highlight (hover 高光沿鼠标位置轻微移动)
-import { useCallback, type CSSProperties, type ReactNode, type MouseEvent } from "react";
+// Prism Card — 玻璃卡片容器
+// 指针柔光由全局 controller (lib/pointerLight.ts) 统一驱动: 宿主标注 data-pointer-light,
+// controller 写入 --mx/--my, 光斑层见 index.css 的 [data-pointer-light]::after.
+// 本地不再各自 onMouseMove(单一输入源, 避免每卡循环监听).
+import { type CSSProperties, type ReactNode, type MouseEvent } from "react";
 
 interface Props {
   children: ReactNode;
@@ -13,17 +16,11 @@ interface Props {
 }
 
 export function PrismCard({ children, className = "", style, onClick, role, ariaLabel, tabIndex, onKeyDown }: Props) {
-  const onMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
-    e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
-  }, []);
-
   return (
     <div
       className={`prism-card ${className}`}
       style={style}
-      onMouseMove={onMove}
+      data-pointer-light="glass"
       onClick={onClick}
       role={role}
       aria-label={ariaLabel}
@@ -35,9 +32,15 @@ export function PrismCard({ children, className = "", style, onClick, role, aria
   );
 }
 
+// color-mix 生成带透明度值: 颜色可能是 CSS 变量字符串(var(--xxx)), 不能拼 hex alpha 后缀,
+// 统一走 color-mix(in srgb, <color> pct, transparent)(UI Quality Gate / 对照 Pill alpha 约定).
+function colorMix(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
+
 export function Capsule({ label, color, children, title, className }: { label?: string; color?: string; children?: ReactNode; title?: string; className?: string }) {
   return (
-    <span className={`pill ${className || ""}`} title={title} style={color ? { color, borderColor: color + "44" } : undefined}>
+    <span className={`pill ${className || ""}`} title={title} style={color ? { color, borderColor: colorMix(color, 27) } : undefined}>
       {color && <span className="dot" style={{ background: color }} />}
       {/* 文本包在 pill-text 容器: 长动态值经 flex 收缩 + ellipsis 截断, 不撑破胶囊边界 (UI Quality Gate) */}
       <span className="pill-text">{label ?? children}</span>

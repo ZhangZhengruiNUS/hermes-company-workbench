@@ -199,7 +199,7 @@ export default function Projects({ data, onGotoProjectTasks }: Props) {
 
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-2 mb-3 px-1">
+      <div className="flex items-center gap-2 mb-3 px-1 relative" data-pointer-light="glass">
         <Boxes size={13} style={{ color: "var(--accent-violet)" }} aria-hidden />
         <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>项目库</h2>
         <span className="text-[11px]" style={{ color: "var(--text-3)" }}>

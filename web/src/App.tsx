@@ -1,5 +1,5 @@
 // App shell — 路由(hash) + 数据 + SSE + 主题 + 布局
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AuroraBackground } from "./components/Aurora";
 import { Sidebar, type ViewId } from "./components/Sidebar";
@@ -13,6 +13,7 @@ import { TaskDetailDrawer } from "./components/TaskDetailDrawer";
 import { useBoard } from "./lib/board";
 import { useLiveFeed } from "./lib/live";
 import { useTheme } from "./lib/theme";
+import { initPointerLight, type PointerLightHandle } from "./lib/pointerLight";
 
 // 构建期由 vite define 注入 git SHA (见 vite.config.ts); dev 下为占位符
 declare const __WB_VERSION__: string;
@@ -47,11 +48,23 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false);
   const { theme, toggle } = useTheme();
 
+  // 全局指针柔光: 只初始化一次(内部自门控 fine-pointer / reduced-motion)。
+  const plRef = useRef<PointerLightHandle | null>(null);
+  useEffect(() => {
+    plRef.current = initPointerLight();
+    return () => { plRef.current?.destroy(); plRef.current = null; };
+  }, []);
+
   useEffect(() => {
     const onHash = () => setRoute(parseHash());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  // 路由切换后内容换层(AnimatePresence), 光标不动但命中目标已变: 用缓存坐标重新命中宿主。
+  useEffect(() => {
+    plRef.current?.rehit();
+  }, [view, taskId]);
 
   const { data, error, sourcesFailed, refresh } = useBoard();
   const { liveState, lastSnap } = useLiveFeed(refresh);

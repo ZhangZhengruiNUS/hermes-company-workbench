@@ -47,6 +47,7 @@ export function Sidebar({ view, onView, liveState, lastSnap, version, mobileOpen
   return (
     <nav
       aria-label="主导航"
+      data-pointer-light="nav"
       className={`
         cmd-glass rounded-[var(--radius-xl)] flex flex-col shrink-0
         w-[216px] p-3 sticky top-3 self-start h-[calc(100vh-24px)]
@@ -121,8 +122,8 @@ export function Sidebar({ view, onView, liveState, lastSnap, version, mobileOpen
         })}
       </div>
 
-      {/* 底部 realtime monitor */}
-      <div className="quiet-surface rounded-[var(--radius-ctl)] px-3 py-2.5 mt-2 text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+      {/* 底部 realtime monitor — 嵌套在导航内, 就近命中时仅最内层响应(quiet 档) */}
+      <div className="quiet-surface rounded-[var(--radius-ctl)] px-3 py-2.5 mt-2 text-[11px] leading-relaxed" data-pointer-light="quiet" style={{ color: "var(--text-3)" }}>
         <div className="flex items-center gap-1.5" style={{ color: "var(--text-2)" }}>
           <span
             className={`w-1.5 h-1.5 rounded-full ${liveState === "live" ? "live-dot" : ""}`}

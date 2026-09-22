@@ -318,7 +318,7 @@ export function Team({ data }: Props) {
   return (
     <div className="max-w-[980px]">
       {/* 双 tab: 成员 / 组织(默认成员, 切换不丢状态) */}
-      <div className="flex gap-1 mb-3" role="tablist" aria-label="团队视图">
+      <div className="flex gap-1 mb-3 relative" role="tablist" aria-label="团队视图" data-pointer-light="glass">
         {(["members", "org"] as const).map((t) => (
           <button
             key={t}

@@ -79,20 +79,21 @@ export function DrawerShell({ open, onClose, label, children }: DrawerShellProps
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[80]">
-      {/* overlay — 覆盖全 viewport */}
+    <div className="fixed inset-0 z-[80]" data-pl-veil>
+      {/* overlay — 覆盖全 viewport; data-pl-veil 让指针柔光背景层在遮罩上淡出, 不穿透 */}
       <div
         className="absolute inset-0"
         style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
         onClick={onClose}
         aria-hidden
       />
-      {/* drawer panel — 右侧固定, 不落普通 flow */}
+      {/* drawer panel — 右侧固定, 不落普通 flow; data-pointer-light 让面板作为玻璃宿主响应当前指针 */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={label}
+        data-pointer-light="glass"
         className="cmd-glass absolute top-0 right-0 bottom-0 flex flex-col overflow-hidden"
         style={{
           width: "min(480px, 100vw)",

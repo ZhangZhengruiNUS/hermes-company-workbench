@@ -8,6 +8,11 @@ import { statusMeta, ALL_STATUSES, type BoardData, type Task } from "../lib/api"
 import { currentProgress, currentWork, statusCounts, attentionItems, projStats, fmtTs } from "../lib/board";
 import { AlertTriangle, Zap, Radio, CircleDashed, Bot, Hexagon, Waves } from "lucide-react";
 
+// color-mix 生成带透明度值: 颜色可能是 CSS 变量(var(--xxx)), 不能拼 hex alpha 后缀(UI Quality Gate)。
+function colorMix(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
+
 const EVENT_KIND: Record<string, string> = {
   created: "创建", started: "开始", completed: "完成", archived: "归档",
   blocked: "阻塞", comment: "备注", status: "状态变更", error: "异常",
@@ -43,7 +48,7 @@ function ExecutiveStrip({ counts, workN, projN }: { counts: Record<string, numbe
     "lg:border-l",                          // 4 移动跨全行无边框 / 桌面末格左边框
   ];
   return (
-    <div className="cmd-glass rounded-[var(--radius-lg)] relative overflow-hidden" data-exec-strip>
+    <div className="cmd-glass rounded-[var(--radius-lg)] relative overflow-hidden" data-exec-strip data-pointer-light="glass">
       {/* hero 背景微光晕 */}
       <div aria-hidden className="absolute inset-0 pointer-events-none" style={{
         background: "radial-gradient(ellipse 40% 90% at 15% 0%, rgba(110,168,255,0.14), transparent 60%), radial-gradient(ellipse 35% 80% at 85% 100%, rgba(148,124,255,0.12), transparent 60%)",
@@ -59,16 +64,16 @@ function ExecutiveStrip({ counts, workN, projN }: { counts: Record<string, numbe
             style={{ borderColor: "var(--border-soft)" }}
           >
             <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${c.color}88` }} />
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${colorMix(c.color, 53)}` }} />
               <span className="text-[11.5px] tracking-wide" style={{ color: "var(--text-3)" }}>{c.label}</span>
             </div>
             <div className="relative">
               <div aria-hidden className="absolute inset-0 pointer-events-none" style={{
-                background: `radial-gradient(closest-side, ${c.color}1f, transparent)`,
+                background: `radial-gradient(closest-side, ${colorMix(c.color, 12)}, transparent)`,
               }} />
               <div
                 className="relative text-[34px] font-semibold leading-tight tabular-nums mt-0.5"
-                style={{ color: c.color, textShadow: `0 0 28px ${c.color}66, 0 0 60px ${c.color}33` }}
+                style={{ color: c.color, textShadow: `0 0 28px ${colorMix(c.color, 40)}, 0 0 60px ${colorMix(c.color, 20)}` }}
               >
                 {c.value}
               </div>
