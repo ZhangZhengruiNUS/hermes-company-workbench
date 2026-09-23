@@ -191,7 +191,7 @@ export default function Projects({ data, onGotoProjectTasks }: Props) {
   // §2 错误态: projects_ok=false → 显式错误, 不得伪装成空/正常
   if (!projOk) {
     return (
-      <div className="quiet-surface px-4 py-3 text-[13px]" style={{ color: "var(--status-red)" }}>
+      <div className="quiet-surface relative px-4 py-3 text-[13px]" style={{ color: "var(--status-red)" }}>
         ⚠ 项目数据源不可用{projErr ? ` · ${projErr}` : ""}
       </div>
     );
@@ -208,7 +208,7 @@ export default function Projects({ data, onGotoProjectTasks }: Props) {
       </div>
 
       {projects.length === 0 ? (
-        <div className="quiet-surface">
+        <div className="quiet-surface relative">
           <EmptyState>暂无项目</EmptyState>
         </div>
       ) : (

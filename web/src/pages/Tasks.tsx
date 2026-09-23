@@ -265,7 +265,7 @@ export function Tasks({ data, onOpenTask, initialProject, initialSearch }: Props
 
       {/* content */}
       {filtered.length === 0 ? (
-        <div className="quiet-surface">
+        <div className="quiet-surface relative">
           <EmptyState>
             {f.quick === "active" && tasks.length > 0
               ? "当前工作没有匹配的任务"
@@ -304,7 +304,7 @@ function BoardView({ cols, filtered, projName, onOpenTask, onShowList }: {
               <span className="text-[12px] font-semibold" style={{ color: "var(--text-2)" }}>{m.label}</span>
               <span className="text-[11px] tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>{items.length}</span>
             </div>
-            <div className="quiet-surface flex flex-col gap-1.5 p-1.5">
+            <div className="quiet-surface relative flex flex-col gap-1.5 p-1.5">
               {items.length === 0 ? (
                 <div className="text-center text-[11.5px] py-3" style={{ color: "var(--text-3)" }}>暂无任务</div>
               ) : (
@@ -369,7 +369,7 @@ function ListView({ sorted, shown, projName, onMore, onOpenTask }: {
 }) {
   const page = sorted.slice(0, shown);
   return (
-    <div className="quiet-surface overflow-hidden">
+    <div className="quiet-surface relative overflow-hidden">
       {/* header row */}
       <div className="grid grid-cols-[1fr_90px_110px_110px_90px] gap-2 px-3 py-2 text-[11px] font-semibold" style={{ borderBottom: "1px solid var(--border-soft)", color: "var(--text-3)" }}>
         <span>任务</span>

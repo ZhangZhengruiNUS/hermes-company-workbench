@@ -94,8 +94,8 @@ function LiveMission({ progress, onOpen }: { progress: Task[]; onOpen: (id: stri
         <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>当前推进</h2>
       </div>
       {progress.length === 0 ? (
-        <div className="quiet-surface">
-          <div className="px-5 py-4">
+        <div className="quiet-surface relative">
+          <div className="px-5 py-4 relative z-[1]">
             <div className="flex items-center gap-2 mb-1.5">
               <CircleDashed size={13} style={{ color: "var(--text-3)" }} aria-hidden />
               <span className="text-[11px] font-mono tracking-widest" style={{ color: "var(--text-3)" }}>SYSTEM IDLE</span>
@@ -284,7 +284,7 @@ function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }
           <h2 className="text-[13px] font-semibold tracking-wide m-0" style={{ color: "var(--text-2)" }}>需要关注</h2>
         </div>
         {attention.length === 0 ? (
-          <div className="quiet-surface"><EmptyState>当前没有需要你处理的事项</EmptyState></div>
+          <div className="quiet-surface relative"><EmptyState>当前没有需要你处理的事项</EmptyState></div>
         ) : (
           <PrismCard>
             {attention.slice(0, 6).map((a, i) => (
@@ -313,9 +313,9 @@ function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }
           )}
         </div>
         {sourcesFailed?.automations && automations.length === 0 ? (
-          <div className="quiet-surface"><EmptyState>⚠ 自动化数据暂不可用</EmptyState></div>
+          <div className="quiet-surface relative"><EmptyState>⚠ 自动化数据暂不可用</EmptyState></div>
         ) : automations.length === 0 ? (
-          <div className="quiet-surface"><EmptyState>暂无自动化任务</EmptyState></div>
+          <div className="quiet-surface relative"><EmptyState>暂无自动化任务</EmptyState></div>
         ) : (
           <PrismCard>
             {automations.slice(0, 6).map((a, i) => {
@@ -361,9 +361,9 @@ function ControlStack({ attention, automations, profiles, tasks, sourcesFailed }
           )}
         </div>
         {sourcesFailed?.profiles && profiles.length === 0 ? (
-          <div className="quiet-surface"><EmptyState>⚠ 成员数据暂不可用</EmptyState></div>
+          <div className="quiet-surface relative"><EmptyState>⚠ 成员数据暂不可用</EmptyState></div>
         ) : profiles.length === 0 ? (
-          <div className="quiet-surface"><EmptyState>暂无成员数据</EmptyState></div>
+          <div className="quiet-surface relative"><EmptyState>暂无成员数据</EmptyState></div>
         ) : (
           <PrismCard>
             {profiles.slice(0, 9).map((p, i) => {

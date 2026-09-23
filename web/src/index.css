@@ -191,11 +191,11 @@ body {
   opacity: 0;
   transition: opacity 220ms ease;
   will-change: transform, opacity;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent-blue) 3.2%, transparent), transparent 62%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent-blue) 7%, transparent), transparent 62%);
   filter: blur(24px);
 }
 :root.light .pointer-bg-light {
-  background: radial-gradient(circle, color-mix(in srgb, #7a8fb0 3.4%, transparent), transparent 62%);
+  background: radial-gradient(circle, color-mix(in srgb, #7a8fb0 6.5%, transparent), transparent 62%);
 }
 
 /* —— 宿主跟随光斑: 伪元素基于 --mx/--my 绘制, 光斑在底色之上、正文之下(低透明度不漂白) —— */

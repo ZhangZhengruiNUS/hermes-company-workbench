@@ -65,7 +65,8 @@ export function SectionTitle({ children, extra }: { children: ReactNode; extra?:
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="py-5 text-center text-[13px]" style={{ color: "var(--text-3)" }}>
+    /* relative z-[1]: 空态正文抬到安静表面跟随光斑(::after z-index:0)之上, 保持 底-光斑-正文 层级契约 */
+    <div className="relative z-[1] py-5 text-center text-[13px]" style={{ color: "var(--text-3)" }}>
       {children}
     </div>
   );

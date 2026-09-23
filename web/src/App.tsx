@@ -96,7 +96,7 @@ export default function App() {
         transition={{ duration: 0.2 }}
       >
         {error && (
-          <div className="quiet-surface px-4 py-3 mb-3 text-[13px]" style={{ color: "var(--status-red)" }}>
+          <div className="quiet-surface relative px-4 py-3 mb-3 text-[13px]" style={{ color: "var(--status-red)" }}>
             数据读取失败: {error}（将随实时连接自动重试）
           </div>
         )}
